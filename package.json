@@ -1,0 +1,49 @@
+{
+  "name": "@andyfooblah/knowledge-common",
+  "version": "0.2.0",
+  "description": "General-purpose knowledge and utility tools for AI agents powered by Google Gemini.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/lib.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "build:lib": "vite build --config vite.lib.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "peerDependencies": {
+    "@google/genai": ">=1.0.0",
+    "firebase": ">=12.0.0"
+  },
+  "dependencies": {
+    "@google/genai": ">=1.0.0",
+    "firebase": ">=12.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.14.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^9.39.4",
+    "globals": "^16.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "vite-plugin-dts": "^3.9.1",
+    "vitest": "^4.0.18"
+  }
+}
