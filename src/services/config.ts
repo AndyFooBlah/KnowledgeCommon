@@ -26,11 +26,51 @@
 
 import type { Firestore } from 'firebase/firestore';
 
+/**
+ * Optional function overrides for Maps, Weather, and Jokes tools.
+ *
+ * By default, KnowledgeCommon calls Google Maps and JokeAPI directly from the
+ * browser using `mapsApiKey`. This exposes the Maps key in the client bundle and
+ * requires CORS-compatible endpoints (Google's Weather API is browser-blocked).
+ *
+ * Apps that need server-side proxying (API key security, CORS) can provide
+ * override functions here. Each override completely replaces the corresponding
+ * tool's network call. The signatures match what the Gemini tool handler
+ * already passes, so existing `externalSearch.ts` wrappers can be plugged in
+ * directly.
+ *
+ * @example LegacyBot using Firebase callable functions as the proxy:
+ * ```ts
+ * import { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke }
+ *   from './services/externalSearch';
+ *
+ * initializeKnowledgeCommon({
+ *   geminiApiKey: '...',
+ *   firestore: db,
+ *   toolOverrides: { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke },
+ * });
+ * ```
+ */
+export interface KnowledgeToolOverrides {
+  /** Override for place geocoding. Return a human-readable address string. */
+  searchPlace?: (query: string) => Promise<string>;
+  /** Override for distance calculation. Return a human-readable distance string. */
+  getDistanceBetweenPlaces?: (from: string, to: string) => Promise<string>;
+  /** Override for weather lookup. Return a human-readable weather string. */
+  getWeather?: (location: string) => Promise<string>;
+  /** Override for joke fetching. Return a plain-text joke. */
+  getJoke?: (category?: string) => Promise<string>;
+}
+
 /** Configuration for KnowledgeCommon. */
 export interface KnowledgeCommonConfig {
   /** Google Gemini API key. Required for Wikipedia filtering/embeddings and date/time tools. */
   geminiApiKey: string;
-  /** Google Maps API key. Required for Maps and Weather tools; both degrade gracefully without it. */
+  /**
+   * Google Maps API key. Required for Maps and Weather tools when NOT using
+   * toolOverrides. Both tools degrade gracefully when neither key nor override
+   * is configured.
+   */
   mapsApiKey?: string;
   /**
    * Initialized Firestore instance from the consuming application.
@@ -39,6 +79,14 @@ export interface KnowledgeCommonConfig {
    * If omitted, Wikipedia searches skip caching (slower but still functional).
    */
   firestore?: Firestore;
+  /**
+   * Optional function overrides for Maps, Weather, and Jokes tools.
+   * When provided, the override is called instead of the default direct API
+   * implementation. Use this to route calls through a server-side proxy
+   * (e.g. a Firebase Cloud Function) for API key security or CORS compliance.
+   * See `KnowledgeToolOverrides` for details.
+   */
+  toolOverrides?: KnowledgeToolOverrides;
 }
 
 let _config: KnowledgeCommonConfig | null = null;
@@ -49,15 +97,23 @@ let _config: KnowledgeCommonConfig | null = null;
  * Must be called once before using any KnowledgeCommon tools.
  * Call this in your app entry point alongside any other initialization.
  *
- * @example
+ * @example Direct API access (e.g. CarBot):
  * ```ts
- * import { initializeKnowledgeCommon } from '@andyfooblah/knowledgecommon';
- * import { db } from './firebase'; // your app's initialized Firestore instance
- *
  * initializeKnowledgeCommon({
  *   geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY,
  *   mapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
  *   firestore: db,
+ * });
+ * ```
+ *
+ * @example Server-side proxy (e.g. LegacyBot via Firebase callable):
+ * ```ts
+ * import { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke }
+ *   from './services/externalSearch';
+ * initializeKnowledgeCommon({
+ *   geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY,
+ *   firestore: db,
+ *   toolOverrides: { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke },
  * });
  * ```
  */

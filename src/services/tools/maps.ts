@@ -83,7 +83,10 @@ async function geocode(query: string): Promise<{ lat: number; lng: number; forma
 
 /** Look up a place and return a human-readable description. */
 export async function searchPlace(query: string): Promise<string> {
-  if (!getKnowledgeConfig().mapsApiKey) return 'Maps information is not available (no API key configured).';
+  const config = getKnowledgeConfig();
+  // Use override if configured (e.g. server-side proxy for API key security)
+  if (config.toolOverrides?.searchPlace) return config.toolOverrides.searchPlace(query);
+  if (!config.mapsApiKey) return 'Maps information is not available (no API key configured).';
   try {
     const result = await geocode(query);
     if (!result) return `Could not find a location matching "${query}".`;
@@ -95,7 +98,10 @@ export async function searchPlace(query: string): Promise<string> {
 
 /** Calculate the straight-line distance between two places. */
 export async function getDistanceBetweenPlaces(from: string, to: string): Promise<string> {
-  if (!getKnowledgeConfig().mapsApiKey) return 'Maps information is not available (no API key configured).';
+  const config = getKnowledgeConfig();
+  // Use override if configured (e.g. server-side proxy for API key security)
+  if (config.toolOverrides?.getDistanceBetweenPlaces) return config.toolOverrides.getDistanceBetweenPlaces(from, to);
+  if (!config.mapsApiKey) return 'Maps information is not available (no API key configured).';
   try {
     const [fromResult, toResult] = await Promise.all([geocode(from), geocode(to)]);
     if (!fromResult) return `Could not find a location matching "${from}".`;

@@ -21,7 +21,7 @@
 
 // Initialization
 export { initializeKnowledgeCommon, getKnowledgeConfig } from './services/config';
-export type { KnowledgeCommonConfig } from './services/config';
+export type { KnowledgeCommonConfig, KnowledgeToolOverrides } from './services/config';
 
 // Tools
 export { weatherTool, getWeather } from './services/tools/weather';

@@ -42,7 +42,11 @@ export const weatherTool: FunctionDeclaration = {
 
 /** Execute the weather tool. Returns a human-readable weather summary. */
 export async function getWeather(location: string): Promise<string> {
-  const MAPS_API_KEY = getKnowledgeConfig().mapsApiKey;
+  const config = getKnowledgeConfig();
+  // Use override if configured (e.g. server-side proxy — required for Weather API
+  // which does not send CORS headers and therefore cannot be called from the browser)
+  if (config.toolOverrides?.getWeather) return config.toolOverrides.getWeather(location);
+  const MAPS_API_KEY = config.mapsApiKey;
   if (!MAPS_API_KEY) return 'Weather information is not available (no API key configured).';
 
   try {

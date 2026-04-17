@@ -21,6 +21,7 @@
  */
 
 import { FunctionDeclaration, Type } from '@google/genai';
+import { getKnowledgeConfig } from '../config';
 
 /** Gemini function declaration for the joke tool. */
 export const jokeTool: FunctionDeclaration = {
@@ -40,6 +41,9 @@ export const jokeTool: FunctionDeclaration = {
 
 /** Fetch a random joke and return it as a string suitable for voice delivery. */
 export async function getJoke(category?: string): Promise<string> {
+  // Use override if configured (e.g. for apps that want to proxy even keyless APIs)
+  const override = getKnowledgeConfig().toolOverrides?.getJoke;
+  if (override) return override(category);
   try {
     const categories = ['general', 'pun', 'programming', 'misc'];
     const cat = category && categories.includes(category) ? category : 'Any';
