@@ -61,7 +61,7 @@ const CHUNK_CHARS = 2048;          // ≈ 512 tokens (4 chars/token estimate)
 const OVERLAP_CHARS = 400;         // ≈ 100 tokens overlap
 const SEARCH_CANDIDATES = 5;       // articles fetched from OpenSearch
 const MAX_CONFIRMED_ARTICLES = 3;  // articles passed to the full RAG pipeline
-const EMBED_MODEL = 'text-embedding-004';
+const EMBED_MODEL = 'gemini-embedding-001';
 const FILTER_MODEL = 'gemini-3.1-flash-lite-preview';
 
 // ---------------------------------------------------------------------------
