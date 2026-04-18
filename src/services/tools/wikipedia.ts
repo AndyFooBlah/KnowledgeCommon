@@ -117,7 +117,12 @@ export async function searchWikipedia(args: {
   const skipCache = noCache || !db;
 
   const t0 = Date.now();
-  console.log(`[Wikipedia] Starting RAG search for: "${question}" (cache: ${skipCache ? 'disabled' : 'enabled'})`);
+  const debug = getKnowledgeConfig().debug === true;
+  if (debug) {
+    console.log(`[Wikipedia] Starting RAG search for: "${question}" (cache: ${skipCache ? 'disabled' : 'enabled'})`);
+  } else {
+    console.log(`[Wikipedia] Starting RAG search (cache: ${skipCache ? 'disabled' : 'enabled'})`);
+  }
 
   try {
     // --- 1. OpenSearch: find 5 candidate titles ---
@@ -128,7 +133,11 @@ export async function searchWikipedia(args: {
       console.error(`[Wikipedia] OpenSearch failed (${Date.now() - t0}ms):`, err);
       return `Wikipedia search unavailable: OpenSearch timed out or failed.`;
     }
-    console.log(`[Wikipedia] OpenSearch (${Date.now() - t0}ms) → ${candidates.length} candidates: ${candidates.join(', ')}`);
+    if (debug) {
+      console.log(`[Wikipedia] OpenSearch (${Date.now() - t0}ms) → ${candidates.length} candidates: ${candidates.join(', ')}`);
+    } else {
+      console.log(`[Wikipedia] OpenSearch (${Date.now() - t0}ms) → ${candidates.length} candidates`);
+    }
     if (candidates.length === 0) {
       return `No Wikipedia articles found for "${question}".`;
     }
@@ -153,13 +162,22 @@ export async function searchWikipedia(args: {
       console.error(`[Wikipedia] Gemini filter failed (${Date.now() - tFilter}ms):`, err);
       confirmedTitles = candidates.slice(0, MAX_CONFIRMED_ARTICLES);
     }
-    console.log(
-      `[Wikipedia] Gemini filter (${Date.now() - tFilter}ms) → ` +
-      `kept ${confirmedTitles.length}/${candidates.length}: ${confirmedTitles.join(', ')}`,
-    );
+    if (debug) {
+      console.log(
+        `[Wikipedia] Gemini filter (${Date.now() - tFilter}ms) → ` +
+        `kept ${confirmedTitles.length}/${candidates.length}: ${confirmedTitles.join(', ')}`,
+      );
+    } else {
+      console.log(
+        `[Wikipedia] Gemini filter (${Date.now() - tFilter}ms) → ` +
+        `kept ${confirmedTitles.length}/${candidates.length}`,
+      );
+    }
 
     if (confirmedTitles.length === 0) {
-      console.log(`[Wikipedia] Gemini filter rejected all candidates for "${question}"`);
+      if (debug) {
+        console.log(`[Wikipedia] Gemini filter rejected all candidates for "${question}"`);
+      }
       return `No Wikipedia articles were found to be relevant to "${question}".`;
     }
 
@@ -250,7 +268,9 @@ async function fetchArticleChunksNoCacheInternal(title: string): Promise<CachedC
   if (!text) return [];
   const rawChunks = chunkText(text);
   if (rawChunks.length === 0) return [];
-  console.log(`[Wikipedia] No-cache: split "${title}" into ${rawChunks.length} chunks`);
+  if (getKnowledgeConfig().debug === true) {
+    console.log(`[Wikipedia] No-cache: split "${title}" into ${rawChunks.length} chunks`);
+  }
   const embeddings = await embedTexts(rawChunks);
   return rawChunks.map((t, i) => ({ text: t, chunkIndex: i, embedding: embeddings[i] ?? [] }));
 }
@@ -421,10 +441,12 @@ async function getOrFetchArticleChunks(
   maxAgeMs: number,
 ): Promise<CachedChunk[]> {
   const articleRef = doc(db, 'wikipedia_cache', articleId);
+  const debug = getKnowledgeConfig().debug === true;
+  const titleLabel = debug ? `"${title}"` : `article#${articleId.slice(0, 8)}`;
 
   const tCheck = Date.now();
   const snap = await getDoc(articleRef);
-  console.log(`[Wikipedia] Cache check for "${title}" (${Date.now() - tCheck}ms)`);
+  console.log(`[Wikipedia] Cache check for ${titleLabel} (${Date.now() - tCheck}ms)`);
 
   if (snap.exists()) {
     const data = snap.data() as { fetchedAt: Timestamp; chunkCount: number };
@@ -432,12 +454,12 @@ async function getOrFetchArticleChunks(
     if (ageMs < maxAgeMs) {
       const tLoad = Date.now();
       const chunks = await loadChunks(db, articleId, data.chunkCount);
-      console.log(`[Wikipedia] Loaded ${chunks.length} cached chunks for "${title}" (${Date.now() - tLoad}ms)`);
+      console.log(`[Wikipedia] Loaded ${chunks.length} cached chunks for ${titleLabel} (${Date.now() - tLoad}ms)`);
       return chunks;
     }
-    console.log(`[Wikipedia] Cache stale for "${title}" (${Math.round(ageMs / 86400000)}d old), refreshing`);
+    console.log(`[Wikipedia] Cache stale for ${titleLabel} (${Math.round(ageMs / 86400000)}d old), refreshing`);
   } else {
-    console.log(`[Wikipedia] No cache for "${title}", fetching`);
+    console.log(`[Wikipedia] No cache for ${titleLabel}, fetching`);
   }
 
   return fetchAndCacheArticle(db, articleId, title, articleRef);
@@ -460,9 +482,11 @@ async function fetchAndCacheArticle(
   title: string,
   articleRef: ReturnType<typeof doc>,
 ): Promise<CachedChunk[]> {
+  const debug = getKnowledgeConfig().debug === true;
+  const titleLabel = debug ? `"${title}"` : `article#${articleId.slice(0, 8)}`;
   const tFetch = Date.now();
   const text = await fetchArticleText(title);
-  console.log(`[Wikipedia] Fetched article "${title}" (${Date.now() - tFetch}ms)`);
+  console.log(`[Wikipedia] Fetched article ${titleLabel} (${Date.now() - tFetch}ms)`);
   if (!text) return [];
 
   const rawChunks = chunkText(text);
@@ -490,7 +514,7 @@ async function fetchAndCacheArticle(
       chunks.push(chunk);
     }),
   );
-  console.log(`[Wikipedia] Stored ${chunks.length} chunks for "${title}" (${Date.now() - tStore}ms)`);
+  console.log(`[Wikipedia] Stored ${chunks.length} chunks for ${titleLabel} (${Date.now() - tStore}ms)`);
 
   return chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
 }

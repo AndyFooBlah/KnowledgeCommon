@@ -87,6 +87,12 @@ export interface KnowledgeCommonConfig {
    * See `KnowledgeToolOverrides` for details.
    */
   toolOverrides?: KnowledgeToolOverrides;
+  /**
+   * When true, enables verbose debug logging that may include user query text
+   * and Wikipedia article titles. OFF by default to prevent PII leakage into
+   * production consoles and error-reporting pipelines.
+   */
+  debug?: boolean;
 }
 
 let _config: KnowledgeCommonConfig | null = null;

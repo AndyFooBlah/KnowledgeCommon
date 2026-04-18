@@ -14,7 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { initializeKnowledgeCommon } from '../../services/config';
-import { getJoke } from '../../services/tools/jokes';
+import { getJoke, _resetJokeStateForTesting } from '../../services/tools/jokes';
 import { searchPlace, getDistanceBetweenPlaces } from '../../services/tools/maps';
 import { getWeather } from '../../services/tools/weather';
 
@@ -26,6 +26,7 @@ describe('getJoke', () => {
   beforeEach(() => {
     initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
     vi.unstubAllGlobals();
+    _resetJokeStateForTesting();
   });
 
   it('without override: fetches and returns twopart joke formatted as "setup ... delivery"', async () => {
@@ -78,6 +79,37 @@ describe('getJoke', () => {
 
     const result = await getJoke();
     expect(result).toContain("comedy database");
+  });
+
+  it('cooldown: a second call within 2s returns a throttle message without fetching', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: async () => ({ type: 'single', joke: 'First joke.' }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    await getJoke();
+    const second = await getJoke();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(second.toLowerCase()).toContain("overdo");
+  });
+
+  it('daily cap: when localStorage shows 30 calls today, returns rate-limit message without fetching', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const store: Record<string, string> = {
+      'kc.jokeUsage': JSON.stringify({ date: today, count: 30 }),
+    };
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    });
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await getJoke();
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.toLowerCase()).toContain('rate limit');
+    expect(result).toContain('30');
   });
 });
 
