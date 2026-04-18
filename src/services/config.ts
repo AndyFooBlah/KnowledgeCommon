@@ -93,6 +93,29 @@ export interface KnowledgeCommonConfig {
    * production consoles and error-reporting pipelines.
    */
   debug?: boolean;
+  /**
+   * Server-side Wikipedia cache filler (SECURITY_REVIEW H2).
+   *
+   * When consumer apps deny client writes to `wikipedia_cache` in Firestore
+   * rules — the recommended posture, since any authenticated user could
+   * otherwise overwrite a popular article with poisoned content and inject
+   * prompts into other users' Gemini tool calls — they MUST provide this
+   * override so cache fills go through a Cloud Function that fetches from
+   * Wikipedia server-side before writing with the admin SDK.
+   *
+   * Signature: given an articleId (from `titleToId(title)`) and title,
+   * fetch + chunk + embed + write the article into
+   * `wikipedia_cache/{articleId}`. Returns `chunkCount` so the client
+   * knows how many chunks to load.
+   *
+   * When absent: KnowledgeCommon falls back to client-side cache writes.
+   * Those will fail silently if rules deny writes, and the search will
+   * still work (fetching fresh each call) — just slower and more expensive.
+   */
+  cacheWikipediaArticle?: (
+    articleId: string,
+    title: string,
+  ) => Promise<{ chunkCount: number }>;
 }
 
 let _config: KnowledgeCommonConfig | null = null;

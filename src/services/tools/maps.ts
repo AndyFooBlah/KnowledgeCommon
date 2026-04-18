@@ -69,61 +69,27 @@ export const distanceTool: FunctionDeclaration = {
 // Implementations
 // ---------------------------------------------------------------------------
 
-async function geocode(query: string): Promise<{ lat: number; lng: number; formatted: string } | null> {
-  const MAPS_API_KEY = getKnowledgeConfig().mapsApiKey;
-  if (!MAPS_API_KEY) return null;
-  const res = await fetch(
-    `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${MAPS_API_KEY}`,
-  );
-  const data = await res.json();
-  if (data.status !== 'OK' || !data.results?.length) return null;
-  const { lat, lng } = data.results[0].geometry.location;
-  return { lat, lng, formatted: data.results[0].formatted_address };
-}
+/**
+ * H3 fix: the direct-browser Google Maps fetch was removed. Consumers MUST
+ * now supply `toolOverrides.searchPlace` / `getDistanceBetweenPlaces`
+ * (typically a Firebase callable that proxies Maps server-side). Exposing
+ * the Maps key in a client bundle was a live-exposure footgun.
+ */
+
+const NO_OVERRIDE_MSG =
+  'Maps lookup is not configured (no server-side proxy provided). ' +
+  'Tell the user this feature is unavailable.';
 
 /** Look up a place and return a human-readable description. */
 export async function searchPlace(query: string): Promise<string> {
   const config = getKnowledgeConfig();
-  // Use override if configured (e.g. server-side proxy for API key security)
   if (config.toolOverrides?.searchPlace) return config.toolOverrides.searchPlace(query);
-  if (!config.mapsApiKey) return 'Maps information is not available (no API key configured).';
-  try {
-    const result = await geocode(query);
-    if (!result) return `Could not find a location matching "${query}".`;
-    return `"${query}" is located at ${result.formatted}.`;
-  } catch (err) {
-    return `Unable to look up that location: ${String(err)}`;
-  }
+  return NO_OVERRIDE_MSG;
 }
 
 /** Calculate the straight-line distance between two places. */
 export async function getDistanceBetweenPlaces(from: string, to: string): Promise<string> {
   const config = getKnowledgeConfig();
-  // Use override if configured (e.g. server-side proxy for API key security)
   if (config.toolOverrides?.getDistanceBetweenPlaces) return config.toolOverrides.getDistanceBetweenPlaces(from, to);
-  if (!config.mapsApiKey) return 'Maps information is not available (no API key configured).';
-  try {
-    const [fromResult, toResult] = await Promise.all([geocode(from), geocode(to)]);
-    if (!fromResult) return `Could not find a location matching "${from}".`;
-    if (!toResult) return `Could not find a location matching "${to}".`;
-
-    // Haversine formula for great-circle distance
-    const R = 6371; // km
-    const dLat = (toResult.lat - fromResult.lat) * Math.PI / 180;
-    const dLng = (toResult.lng - fromResult.lng) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(fromResult.lat * Math.PI / 180) *
-      Math.cos(toResult.lat * Math.PI / 180) *
-      Math.sin(dLng / 2) ** 2;
-    const distKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distMi = distKm * 0.621371;
-
-    return (
-      `${fromResult.formatted} to ${toResult.formatted} is approximately ` +
-      `${Math.round(distMi)} miles (${Math.round(distKm)} km) in a straight line.`
-    );
-  } catch (err) {
-    return `Unable to calculate distance: ${String(err)}`;
-  }
+  return NO_OVERRIDE_MSG;
 }

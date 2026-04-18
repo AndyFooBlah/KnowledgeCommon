@@ -482,8 +482,35 @@ async function fetchAndCacheArticle(
   title: string,
   articleRef: ReturnType<typeof doc>,
 ): Promise<CachedChunk[]> {
-  const debug = getKnowledgeConfig().debug === true;
+  const cfg = getKnowledgeConfig();
+  const debug = cfg.debug === true;
   const titleLabel = debug ? `"${title}"` : `article#${articleId.slice(0, 8)}`;
+
+  // H2 mitigation: when a server-side cache filler is configured, delegate
+  // the write to it. The Cloud Function re-fetches the article from Wikipedia
+  // with the admin SDK, guaranteeing cache integrity. The client then reads
+  // the freshly-written chunks back. When no override is present, fall through
+  // to the legacy client-write path (which will fail silently under strict
+  // firestore.rules — the search still works, it just doesn't cache).
+  if (cfg.cacheWikipediaArticle) {
+    const tServer = Date.now();
+    try {
+      const { chunkCount } = await cfg.cacheWikipediaArticle(articleId, title);
+      console.log(`[Wikipedia] Server-cached ${titleLabel} (${Date.now() - tServer}ms, ${chunkCount} chunks)`);
+      if (chunkCount === 0) return [];
+      return loadChunks(db, articleId, chunkCount);
+    } catch (err) {
+      console.warn(`[Wikipedia] Server-side cache filler failed for ${titleLabel}, falling back:`, err);
+      // fall through to direct fetch+embed (no write) so the search still returns something
+      const text = await fetchArticleText(title);
+      if (!text) return [];
+      const rawChunks = chunkText(text);
+      if (rawChunks.length === 0) return [];
+      const embeddings = await embedTexts(rawChunks);
+      return rawChunks.map((t, i) => ({ text: t, chunkIndex: i, embedding: embeddings[i] ?? [] }));
+    }
+  }
+
   const tFetch = Date.now();
   const text = await fetchArticleText(title);
   console.log(`[Wikipedia] Fetched article ${titleLabel} (${Date.now() - tFetch}ms)`);

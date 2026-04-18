@@ -119,23 +119,17 @@ describe('getJoke', () => {
 
 describe('searchPlace', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key', mapsApiKey: 'maps-key' });
+    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
     vi.unstubAllGlobals();
   });
 
-  it('without override: mocks geocode fetch and returns formatted address', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      json: async () => ({
-        status: 'OK',
-        results: [{
-          formatted_address: 'New York, NY, USA',
-          geometry: { location: { lat: 40.7128, lng: -74.0060 } },
-        }],
-      }),
-    }));
+  it('without override: returns a not-configured message and does NOT call fetch', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
 
     const result = await searchPlace('New York, NY');
-    expect(result).toContain('New York, NY, USA');
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.toLowerCase()).toContain('not configured');
   });
 
   it('with toolOverride: calls override and does NOT call fetch', async () => {
@@ -145,7 +139,6 @@ describe('searchPlace', () => {
     const override = vi.fn().mockResolvedValue('override address result');
     initializeKnowledgeCommon({
       geminiApiKey: 'test-key',
-      mapsApiKey: 'maps-key',
       toolOverrides: { searchPlace: override },
     });
 
@@ -158,37 +151,17 @@ describe('searchPlace', () => {
 
 describe('getDistanceBetweenPlaces', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key', mapsApiKey: 'maps-key' });
+    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
     vi.unstubAllGlobals();
   });
 
-  it('without override: mocks two geocode calls and returns distance string', async () => {
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 'OK',
-          results: [{
-            formatted_address: 'New York, NY, USA',
-            geometry: { location: { lat: 40.7128, lng: -74.0060 } },
-          }],
-        }),
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
-          status: 'OK',
-          results: [{
-            formatted_address: 'Los Angeles, CA, USA',
-            geometry: { location: { lat: 34.0522, lng: -118.2437 } },
-          }],
-        }),
-      }),
-    );
+  it('without override: returns a not-configured message and does NOT call fetch', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
 
     const result = await getDistanceBetweenPlaces('New York, NY', 'Los Angeles, CA');
-    expect(result).toContain('miles');
-    expect(result).toContain('km');
-    expect(result).toContain('New York, NY, USA');
-    expect(result).toContain('Los Angeles, CA, USA');
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.toLowerCase()).toContain('not configured');
   });
 
   it('with toolOverride: calls override and does NOT call fetch', async () => {
@@ -198,7 +171,6 @@ describe('getDistanceBetweenPlaces', () => {
     const override = vi.fn().mockResolvedValue('override distance result');
     initializeKnowledgeCommon({
       geminiApiKey: 'test-key',
-      mapsApiKey: 'maps-key',
       toolOverrides: { getDistanceBetweenPlaces: override },
     });
 
@@ -235,42 +207,12 @@ describe('getWeather', () => {
     expect(result).toBe('override weather result');
   });
 
-  it('without mapsApiKey: returns "not available" string', async () => {
-    // Already initialized without mapsApiKey in beforeEach
-    const result = await getWeather('San Francisco');
-    expect(result).toContain('not available');
-  });
-
-  it('without override but with mapsApiKey: mocks geocode + weather calls and returns formatted string', async () => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key', mapsApiKey: 'maps-key' });
-
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce({
-        // Geocode response
-        json: async () => ({
-          status: 'OK',
-          results: [{
-            formatted_address: 'San Francisco, CA, USA',
-            geometry: { location: { lat: 37.7749, lng: -122.4194 } },
-          }],
-        }),
-      })
-      .mockResolvedValueOnce({
-        // Weather API response
-        ok: true,
-        json: async () => ({
-          weatherCondition: { description: { text: 'Partly cloudy' } },
-          temperature: { degrees: 15 },
-          relativeHumidity: 72,
-          wind: { speed: { value: 20 } },
-        }),
-      }),
-    );
+  it('without override: returns a not-configured message and does NOT call fetch', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
 
     const result = await getWeather('San Francisco');
-    expect(result).toContain('San Francisco, CA, USA');
-    expect(result).toContain('Partly cloudy');
-    expect(result).toContain('59°F');
-    expect(result).toContain('15°C');
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.toLowerCase()).toContain('not configured');
   });
 });
