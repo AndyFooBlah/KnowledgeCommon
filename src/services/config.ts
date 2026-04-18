@@ -118,7 +118,21 @@ export interface KnowledgeCommonConfig {
   ) => Promise<{ chunkCount: number }>;
 }
 
-let _config: KnowledgeCommonConfig | null = null;
+/**
+ * Unique key for storing config on globalThis.
+ *
+ * Using globalThis rather than a module-level variable ensures the singleton
+ * survives across bundler chunk boundaries and duplicate module instances.
+ * When a consuming app uses Vite with `preserveSymlinks: true` (e.g. for
+ * `file:` npm deps), a nested-symlink package can resolve to two distinct
+ * module IDs; a module-level `_config` would have two separate instances
+ * while this globalThis approach keeps a single authoritative value.
+ *
+ * A registry-based Symbol (Symbol.for) is used instead of a string property
+ * so third-party code scanning Object.keys(globalThis) does not surface the
+ * config, but cross-instance lookup still works.
+ */
+const GLOBAL_CONFIG_KEY = Symbol.for('@andyfooblah/knowledge-common/config');
 
 /**
  * Initialize KnowledgeCommon with your application's configuration.
@@ -147,7 +161,7 @@ let _config: KnowledgeCommonConfig | null = null;
  * ```
  */
 export function initializeKnowledgeCommon(config: KnowledgeCommonConfig): void {
-  _config = config;
+  (globalThis as Record<symbol, unknown>)[GLOBAL_CONFIG_KEY] = config;
 }
 
 /**
@@ -155,10 +169,21 @@ export function initializeKnowledgeCommon(config: KnowledgeCommonConfig): void {
  * Throws if `initializeKnowledgeCommon()` has not been called yet.
  */
 export function getKnowledgeConfig(): KnowledgeCommonConfig {
-  if (!_config) {
+  const config = (globalThis as Record<symbol, unknown>)[GLOBAL_CONFIG_KEY] as
+    | KnowledgeCommonConfig
+    | undefined;
+  if (!config) {
     throw new Error(
       'KnowledgeCommon is not initialized. Call initializeKnowledgeCommon(config) before using any tools.',
     );
   }
-  return _config;
+  return config;
+}
+
+/**
+ * Test-only helper to reset KnowledgeCommon's global config, isolating tests
+ * that mutate it. Not re-exported from lib.ts.
+ */
+export function _resetKnowledgeConfigForTesting(): void {
+  delete (globalThis as Record<symbol, unknown>)[GLOBAL_CONFIG_KEY];
 }
