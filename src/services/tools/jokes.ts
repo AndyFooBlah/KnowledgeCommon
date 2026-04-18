@@ -47,7 +47,10 @@ export async function getJoke(category?: string): Promise<string> {
   try {
     const categories = ['general', 'pun', 'programming', 'misc'];
     const cat = category && categories.includes(category) ? category : 'Any';
-    const url = `https://v2.jokeapi.dev/joke/${cat}?safe-mode&type=twopart,single`;
+    // `type` accepts only a single value (single|twopart) per JokeAPI docs —
+    // omit it to receive either style. The prior `type=twopart,single` form
+    // returned HTTP 400. `safe-mode` continues to filter adult/offensive content.
+    const url = `https://v2.jokeapi.dev/joke/${cat}?safe-mode`;
 
     const res = await fetch(url);
     const data = await res.json();
