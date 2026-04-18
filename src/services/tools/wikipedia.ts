@@ -367,6 +367,22 @@ export async function fetchSummary(title: string): Promise<ArticleSummary | null
   }
 }
 
+/**
+ * M7: Wikipedia titles + summaries are attacker-controllable — anyone can
+ * rename a Wikipedia article to inject prompt directives that would make
+ * the filter model always return `[1, 2, 3, 4, 5]` (cost-amplification) or
+ * follow arbitrary instructions. Strip control chars, collapse whitespace,
+ * and neutralise the closing quote so a crafted title can't escape the
+ * `"${title}"` context in the filter prompt.
+ */
+function sanitizeForPrompt(s: string): string {
+  return s
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/"/g, '\u201D')
+    .trim();
+}
+
 async function filterRelevantArticles(
   question: string,
   candidates: string[],
@@ -374,11 +390,16 @@ async function filterRelevantArticles(
 ): Promise<string[]> {
   const articleList = candidates.map((title, i) => {
     const summary = summaries[i];
-    const desc = summary?.description ? ` — ${summary.description}` : '';
-    const extract = summary?.extract
-      ? `\n   ${summary.extract.slice(0, 300)}${summary.extract.length > 300 ? '...' : ''}`
+    const safeTitle = sanitizeForPrompt(title);
+    const desc = summary?.description
+      ? ` — ${sanitizeForPrompt(summary.description)}`
       : '';
-    return `${i + 1}. "${title}"${desc}${extract}`;
+    const rawExtract = summary?.extract ?? '';
+    const clippedExtract = rawExtract.slice(0, 300) + (rawExtract.length > 300 ? '...' : '');
+    const extract = clippedExtract
+      ? `\n   ${sanitizeForPrompt(clippedExtract)}`
+      : '';
+    return `${i + 1}. "${safeTitle}"${desc}${extract}`;
   }).join('\n\n');
 
   const prompt =
