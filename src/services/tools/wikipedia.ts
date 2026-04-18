@@ -64,6 +64,48 @@ const MAX_CONFIRMED_ARTICLES = 3;  // articles passed to the full RAG pipeline
 const EMBED_MODEL = 'gemini-embedding-001';
 const FILTER_MODEL = 'gemini-3.1-flash-lite-preview';
 
+// M8: client-side rate limit mirroring jokes.ts. Each search costs a
+// Gemini embedding call plus up to 3 article fetch+embed pipelines, so a
+// runaway model loop can pile up real API charges. The cooldown catches
+// model tool-call loops; the daily cap bounds a legitimate-but-chatty
+// session to a reasonable Gemini spend.
+const WIKI_COOLDOWN_MS = 1_500;
+const WIKI_DAILY_CAP = 200;
+const WIKI_USAGE_KEY = 'kc.wikiUsage';
+let lastWikiCallAt = 0;
+
+export function _resetWikiStateForTesting(): void {
+  lastWikiCallAt = 0;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(WIKI_USAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function incrementAndCheckDailyWikiCap(): { allowed: boolean; used: number; cap: number } {
+  const today = new Date().toISOString().slice(0, 10);
+  let used = 0;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(WIKI_USAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { date?: string; count?: number };
+        if (parsed.date === today) used = Number(parsed.count) || 0;
+      }
+      if (used >= WIKI_DAILY_CAP) {
+        return { allowed: false, used, cap: WIKI_DAILY_CAP };
+      }
+      localStorage.setItem(WIKI_USAGE_KEY, JSON.stringify({ date: today, count: used + 1 }));
+    } catch {
+      // localStorage disabled (private mode, SSR). Cooldown still bounds loop abuse.
+    }
+  }
+  return { allowed: true, used: used + 1, cap: WIKI_DAILY_CAP };
+}
+
 // ---------------------------------------------------------------------------
 // Tool declaration
 // ---------------------------------------------------------------------------
@@ -113,6 +155,20 @@ export async function searchWikipedia(args: {
   noCache?: boolean;
 }): Promise<string> {
   const { question, maxChunks = 4, maxAgeDays = 7, noCache = false } = args;
+
+  // M8: rate-limit gate before any API calls. Same message shape as the
+  // jokes/geoProxy throttles so the model treats it as a normal tool response.
+  const now = Date.now();
+  if (now - lastWikiCallAt < WIKI_COOLDOWN_MS) {
+    return "Let's pace the Wikipedia lookups — give it a moment before the next search.";
+  }
+  lastWikiCallAt = now;
+
+  const quota = incrementAndCheckDailyWikiCap();
+  if (!quota.allowed) {
+    return `Rate limit reached: we've run ${quota.cap} Wikipedia searches today. Tell the user we've used up today's research budget and can look things up again tomorrow.`;
+  }
+
   const db = getKnowledgeConfig().firestore;
   const skipCache = noCache || !db;
 

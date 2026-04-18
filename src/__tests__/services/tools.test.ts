@@ -17,6 +17,7 @@ import { initializeKnowledgeCommon } from '../../services/config';
 import { getJoke, _resetJokeStateForTesting } from '../../services/tools/jokes';
 import { searchPlace, getDistanceBetweenPlaces } from '../../services/tools/maps';
 import { getWeather } from '../../services/tools/weather';
+import { searchWikipedia, _resetWikiStateForTesting } from '../../services/tools/wikipedia';
 
 // ---------------------------------------------------------------------------
 // jokes.ts
@@ -214,5 +215,53 @@ describe('getWeather', () => {
     const result = await getWeather('San Francisco');
     expect(mockFetch).not.toHaveBeenCalled();
     expect(result.toLowerCase()).toContain('not configured');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wikipedia.ts — rate limit gate (M8)
+// ---------------------------------------------------------------------------
+
+describe('searchWikipedia rate limit', () => {
+  beforeEach(() => {
+    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
+    vi.unstubAllGlobals();
+    _resetWikiStateForTesting();
+  });
+
+  it('cooldown: a second call within 1.5s returns a throttle message without fetching', async () => {
+    // First call: stub OpenSearch to return 0 candidates so it exits fast
+    // without needing Gemini/Firestore mocks.
+    const mockFetch = vi.fn().mockResolvedValue({
+      json: async () => [],
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const first = await searchWikipedia({ question: 'test' });
+    expect(first).toBeDefined();
+    const callsAfterFirst = mockFetch.mock.calls.length;
+
+    const second = await searchWikipedia({ question: 'test' });
+    expect(mockFetch.mock.calls.length).toBe(callsAfterFirst);
+    expect(second.toLowerCase()).toContain('pace');
+  });
+
+  it('daily cap: when localStorage shows 200 calls today, returns rate-limit message without fetching', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const store: Record<string, string> = {
+      'kc.wikiUsage': JSON.stringify({ date: today, count: 200 }),
+    };
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    });
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await searchWikipedia({ question: 'test' });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(result.toLowerCase()).toContain('rate limit');
+    expect(result).toContain('200');
   });
 });
