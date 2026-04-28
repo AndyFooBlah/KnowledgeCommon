@@ -35,6 +35,27 @@ export default [
       'no-console': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-unsafe-function-type': 'error',
+      // Hard rule: a library must not reach for env-supplied credentials.
+      // Anything VITE_*-prefixed gets baked into a consumer's bundle;
+      // anything process.env.*_API_KEY/SECRET/TOKEN/GEMINI* would imply the
+      // library is reading a key it should never own. All Gemini access is
+      // via the consumer-supplied broker (gemini.invokeGemini /
+      // gemini.embedContent passed to initializeKnowledgeCommon).
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.object.type='MetaProperty'][object.property.name='env']",
+          message:
+            'A library must not read import.meta.env.* — anything bundled here forces the value into every consumer. Configuration belongs in initializeKnowledgeCommon(...) at runtime.',
+        },
+        {
+          selector:
+            "MemberExpression[object.object.name='process'][object.property.name='env'][property.name=/(GEMINI|API_KEY|SECRET|TOKEN)/i]",
+          message:
+            'A library must not read process.env.GEMINI_* / *_API_KEY / *_SECRET / *_TOKEN. Consumers pass the gemini broker at init time; the library never holds keys.',
+        },
+      ],
     },
   },
   {

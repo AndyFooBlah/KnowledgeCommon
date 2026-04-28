@@ -20,7 +20,8 @@
     "access": "restricted"
   },
   "scripts": {
-    "build:lib": "vite build --config vite.lib.config.ts",
+    "build:lib": "vite build --config vite.lib.config.ts && node scripts/check-bundle-for-secrets.mjs",
+    "check:bundle": "node scripts/check-bundle-for-secrets.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
