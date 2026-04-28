@@ -1,5 +1,34 @@
 # KnowledgeCommon — Claude Code Instructions
 
+## 🔑 Sensitive API keys — read first
+
+**KnowledgeCommon is a library and never holds a Gemini API key.** Every internal Gemini call (Wikipedia RAG embeddings + filtering, date/time normalization) goes through the consumer-supplied `gemini` broker:
+
+```ts
+initializeKnowledgeCommon({
+  gemini: {
+    invokeGemini(req)  { /* consumer's server-side proxy */ },
+    embedContent(req)  { /* consumer's server-side proxy */ },
+  },
+  // ... other config
+});
+```
+
+The `gemini` field is **required** by `KnowledgeCommonConfig` (the previous `geminiApiKey: string` field was deleted in 1.0.0). Internal modules call `getKnowledgeConfig().gemini.invokeGemini(...)` / `.embedContent(...)`; they never `new GoogleGenAI({ apiKey })`.
+
+**Do not** add a `geminiApiKey?: string` "convenience" field "just for tests / dev". The whole point of dropping it was that the easier path always wins, and a single forgotten reference forces every consumer to bundle a key. Tests mock the broker (see `src/__tests__/services/dateTimeUtils.test.ts` for the pattern).
+
+Public helper signatures (`computeTimeDifference`, `computeTimeOffset`, `normalizeDate`) **do not take an `apiKey` parameter**. Adding one back would push the key-handling burden onto consumers in a way that nudges them toward bundling. Use the broker via `getKnowledgeConfig().gemini` instead.
+
+**Two automated guards stop accidental regressions:**
+
+1. **ESLint** (`eslint.config.js`) — `no-restricted-syntax` errors on:
+   - ANY read of `import.meta.env.*` in `src/**` (a library bundling an env var forces the value into every consumer)
+   - `process.env.GEMINI_* / *_API_KEY / *_SECRET / *_TOKEN` (the library never reads keys directly)
+2. **Post-build bundle scan** (`scripts/check-bundle-for-secrets.mjs`, run as part of `npm run build:lib`) — greps the published `dist/` for known secret shapes and **fails on any match** (no allowlist).
+
+If either guard fires, **fix the leak**; do not weaken the rule.
+
 ## After any material change
 
 Before considering a task complete, ensure all of the following are done:
