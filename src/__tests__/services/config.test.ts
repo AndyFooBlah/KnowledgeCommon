@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   initializeKnowledgeCommon,
   getKnowledgeConfig,
@@ -31,16 +31,18 @@ describe('KnowledgeCommon config singleton', () => {
   });
 
   it('returns the value set by initializeKnowledgeCommon', () => {
-    initializeKnowledgeCommon({ geminiApiKey: 'abc' });
-    expect(getKnowledgeConfig().geminiApiKey).toBe('abc');
+    const broker = { invokeGemini: vi.fn(), embedContent: vi.fn() };
+    initializeKnowledgeCommon({ gemini: broker });
+    expect(getKnowledgeConfig().gemini).toBe(broker);
   });
 
   it('uses globalThis so separate module instances share the same config', async () => {
     // Re-import the module dynamically — in a real consumer bundle this could
     // resolve to a different instance (e.g. preserveSymlinks + nested symlink).
     // The globalThis Symbol.for key guarantees cross-instance singleton.
-    initializeKnowledgeCommon({ geminiApiKey: 'shared' });
+    const broker = { invokeGemini: vi.fn(), embedContent: vi.fn() };
+    initializeKnowledgeCommon({ gemini: broker });
     const freshModule = await import('../../services/config?t=' + Date.now());
-    expect(freshModule.getKnowledgeConfig().geminiApiKey).toBe('shared');
+    expect(freshModule.getKnowledgeConfig().gemini).toBe(broker);
   });
 });

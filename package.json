@@ -1,6 +1,6 @@
 {
   "name": "@andyfooblah/knowledge-common",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "General-purpose knowledge and utility tools for AI agents powered by Google Gemini.",
   "type": "module",
   "main": "./dist/index.js",

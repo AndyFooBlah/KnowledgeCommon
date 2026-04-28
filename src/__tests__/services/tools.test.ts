@@ -25,7 +25,7 @@ import { searchWikipedia, _resetWikiStateForTesting } from '../../services/tools
 
 describe('getJoke', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
+    initializeKnowledgeCommon({ gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() } });
     vi.unstubAllGlobals();
     _resetJokeStateForTesting();
   });
@@ -65,7 +65,7 @@ describe('getJoke', () => {
 
     const override = vi.fn().mockResolvedValue('override joke');
     initializeKnowledgeCommon({
-      geminiApiKey: 'test-key',
+      gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() },
       toolOverrides: { getJoke: override },
     });
 
@@ -120,7 +120,7 @@ describe('getJoke', () => {
 
 describe('searchPlace', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
+    initializeKnowledgeCommon({ gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() } });
     vi.unstubAllGlobals();
   });
 
@@ -139,7 +139,7 @@ describe('searchPlace', () => {
 
     const override = vi.fn().mockResolvedValue('override address result');
     initializeKnowledgeCommon({
-      geminiApiKey: 'test-key',
+      gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() },
       toolOverrides: { searchPlace: override },
     });
 
@@ -152,7 +152,7 @@ describe('searchPlace', () => {
 
 describe('getDistanceBetweenPlaces', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
+    initializeKnowledgeCommon({ gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() } });
     vi.unstubAllGlobals();
   });
 
@@ -171,7 +171,7 @@ describe('getDistanceBetweenPlaces', () => {
 
     const override = vi.fn().mockResolvedValue('override distance result');
     initializeKnowledgeCommon({
-      geminiApiKey: 'test-key',
+      gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() },
       toolOverrides: { getDistanceBetweenPlaces: override },
     });
 
@@ -188,7 +188,7 @@ describe('getDistanceBetweenPlaces', () => {
 
 describe('getWeather', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
+    initializeKnowledgeCommon({ gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() } });
     vi.unstubAllGlobals();
   });
 
@@ -198,7 +198,7 @@ describe('getWeather', () => {
 
     const override = vi.fn().mockResolvedValue('override weather result');
     initializeKnowledgeCommon({
-      geminiApiKey: 'test-key',
+      gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() },
       toolOverrides: { getWeather: override },
     });
 
@@ -224,7 +224,7 @@ describe('getWeather', () => {
 
 describe('searchWikipedia rate limit', () => {
   beforeEach(() => {
-    initializeKnowledgeCommon({ geminiApiKey: 'test-key' });
+    initializeKnowledgeCommon({ gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() } });
     vi.unstubAllGlobals();
     _resetWikiStateForTesting();
   });

@@ -62,10 +62,58 @@ export interface KnowledgeToolOverrides {
   getJoke?: (category?: string) => Promise<string>;
 }
 
+/**
+ * Server-side broker for Gemini calls. Required by `KnowledgeCommonConfig`.
+ *
+ * KnowledgeCommon **never** holds a Gemini API key directly. Every Gemini call
+ * — Wikipedia article filtering, embedding for RAG, natural-language date
+ * parsing — goes through this broker, which the consuming application
+ * implements as a thin wrapper around its own Cloud Functions / serverless
+ * endpoints. The long-lived `GEMINI_API_KEY` lives only in the consumer's
+ * server-side secret store (e.g. Firebase Secret Manager) and never reaches
+ * the browser bundle.
+ *
+ * @example LegacyBot wires its own Cloud Function callables into this shape:
+ * ```ts
+ * import { invokeGemini, embedGemini } from './services/geminiBroker';
+ *
+ * initializeKnowledgeCommon({
+ *   gemini: { invokeGemini, embedContent: embedGemini },
+ *   firestore: db,
+ *   ...
+ * });
+ * ```
+ */
+export interface KnowledgeGeminiBroker {
+  /**
+   * Server-side proxy for `ai.models.generateContent`. The consumer's
+   * implementation must enforce its own auth + rate-limit + model allow-list
+   * before forwarding to Gemini.
+   */
+  invokeGemini(req: {
+    model: string;
+    contents: unknown;
+    config?: Record<string, unknown>;
+  }): Promise<{ text: string; candidates?: unknown; usageMetadata?: unknown }>;
+
+  /**
+   * Server-side proxy for `ai.models.embedContent`. Returns one embedding
+   * vector per input text in `contents`, in the same order.
+   */
+  embedContent(req: {
+    model: string;
+    contents: string[];
+  }): Promise<{ embeddings: number[][] }>;
+}
+
 /** Configuration for KnowledgeCommon. */
 export interface KnowledgeCommonConfig {
-  /** Google Gemini API key. Required for Wikipedia filtering/embeddings and date/time tools. */
-  geminiApiKey: string;
+  /**
+   * Server-side broker for every Gemini call KnowledgeCommon makes.
+   * **Required.** A Gemini API key is never held by this library or its host
+   * bundle — see `KnowledgeGeminiBroker`.
+   */
+  gemini: KnowledgeGeminiBroker;
   /**
    * Google Maps API key. Required for Maps and Weather tools when NOT using
    * toolOverrides. Both tools degrade gracefully when neither key nor override
@@ -140,21 +188,14 @@ const GLOBAL_CONFIG_KEY = Symbol.for('@andyfooblah/knowledge-common/config');
  * Must be called once before using any KnowledgeCommon tools.
  * Call this in your app entry point alongside any other initialization.
  *
- * @example Direct API access (e.g. CarBot):
+ * @example
  * ```ts
- * initializeKnowledgeCommon({
- *   geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY,
- *   mapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
- *   firestore: db,
- * });
- * ```
- *
- * @example Server-side proxy (e.g. LegacyBot via Firebase callable):
- * ```ts
+ * import { invokeGemini, embedGemini } from './services/geminiBroker';
  * import { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke }
  *   from './services/externalSearch';
+ *
  * initializeKnowledgeCommon({
- *   geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY,
+ *   gemini: { invokeGemini, embedContent: embedGemini },
  *   firestore: db,
  *   toolOverrides: { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke },
  * });

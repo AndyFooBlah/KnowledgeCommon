@@ -41,7 +41,7 @@
  * articleId = Wikipedia title with spaces replaced by underscores (lowercase).
  */
 
-import { FunctionDeclaration, GoogleGenAI, Type } from '@google/genai';
+import { FunctionDeclaration, Type } from '@google/genai';
 import {
   collection,
   doc,
@@ -413,11 +413,10 @@ async function filterRelevantArticles(
     `Example: [1, 3]`;
 
   try {
-    const { geminiApiKey } = getKnowledgeConfig();
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+    const { gemini } = getKnowledgeConfig();
 
     const response = await Promise.race([
-      ai.models.generateContent({
+      gemini.invokeGemini({
         model: FILTER_MODEL,
         contents: prompt,
         config: {
@@ -630,12 +629,11 @@ async function fetchAndCacheArticle(
 async function embedTexts(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
 
-  const { geminiApiKey } = getKnowledgeConfig();
-  const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+  const { gemini } = getKnowledgeConfig();
 
   const timeoutMs = 10000 + texts.length * 2000;
   const response = await Promise.race([
-    ai.models.embedContent({
+    gemini.embedContent({
       model: EMBED_MODEL,
       contents: texts,
     }),
@@ -647,7 +645,7 @@ async function embedTexts(texts: string[]): Promise<number[][]> {
     ),
   ]);
 
-  return (response.embeddings ?? []).map((e) => e.values ?? []);
+  return response.embeddings ?? [];
 }
 
 // ---------------------------------------------------------------------------

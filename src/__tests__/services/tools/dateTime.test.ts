@@ -91,7 +91,7 @@ describe('getTimeDifference', () => {
 
     const result = await getTimeDifference('summer 1997', 'summer 2024', NOW);
 
-    expect(computeTimeDifference).toHaveBeenCalledWith('summer 1997', 'summer 2024', NOW, 'test-key');
+    expect(computeTimeDifference).toHaveBeenCalledWith('summer 1997', 'summer 2024', NOW);
     expect(result).toBe('about 27 years after summer 1997 (summer 2024)');
   });
 
@@ -116,7 +116,7 @@ describe('getTimeOffset', () => {
 
     const result = await getTimeOffset('July 4th 1976', '6 months later', NOW);
 
-    expect(computeTimeOffset).toHaveBeenCalledWith('July 4th 1976', '6 months later', NOW, 'test-key');
+    expect(computeTimeOffset).toHaveBeenCalledWith('July 4th 1976', '6 months later', NOW);
     expect(result).toBe('about 6 months later from July 4th, 1976 — around January 1977');
   });
 

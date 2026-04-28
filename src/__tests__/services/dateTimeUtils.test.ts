@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import {
   parseBestEstimate,
   diffInDays,
@@ -27,32 +27,29 @@ import {
 } from '../../services/dateTimeUtils';
 
 // ---------------------------------------------------------------------------
-// Mock GoogleGenAI
+// Mock the Gemini broker (provided to KnowledgeCommon at init time).
+// dateTimeUtils calls `getKnowledgeConfig().gemini.invokeGemini(...)`; we drive
+// it via this shared mock — no `GoogleGenAI` SDK in this module any more.
 // ---------------------------------------------------------------------------
 
-vi.mock('@google/genai', () => ({
-  GoogleGenAI: vi.fn().mockImplementation(function() {
-    return {
-      models: {
-        generateContent: vi.fn(),
-      },
-    };
-  }),
-}));
+import { initializeKnowledgeCommon } from '../../services/config';
 
-import { GoogleGenAI } from '@google/genai';
+const mockInvokeGemini = vi.fn();
+const mockEmbedContent = vi.fn();
+
+beforeAll(() => {
+  initializeKnowledgeCommon({
+    gemini: {
+      invokeGemini: (req) => mockInvokeGemini(req),
+      embedContent: (req) => mockEmbedContent(req),
+    },
+  });
+});
 
 function mockGenerateContent(jsonResponse: object) {
-  const instance = new (GoogleGenAI as any)();
-  instance.models.generateContent.mockResolvedValue({
-    candidates: [{ content: { parts: [{ text: JSON.stringify(jsonResponse) }] } }],
-  });
-  // Re-mock constructor so next `new GoogleGenAI()` call in the module also returns this
-  (GoogleGenAI as any).mockImplementation(function() { return instance; });
-  return instance;
+  mockInvokeGemini.mockResolvedValue({ text: JSON.stringify(jsonResponse) });
 }
 
-const API_KEY = 'test-api-key';
 const NOW = 'Sunday, April 12, 2026, 12:00 AM PDT';
 
 /** Convenience: build a full DateTimePoint; time-of-day defaults to noon. */
@@ -381,7 +378,7 @@ describe('normalizeDate', () => {
       description: 'mid-summer 1997',
     };
     mockGenerateContent(expected);
-    expect(await normalizeDate('summer 1997', NOW, API_KEY)).toEqual(expected);
+    expect(await normalizeDate('summer 1997', NOW)).toEqual(expected);
   });
 
   it('returns parsed JSON from Gemini (minute resolution)', async () => {
@@ -392,7 +389,7 @@ describe('normalizeDate', () => {
       description: '2:30 PM on November 9, 2023',
     };
     mockGenerateContent(expected);
-    expect(await normalizeDate('2:30 PM on Nov 9 2023', NOW, API_KEY)).toEqual(expected);
+    expect(await normalizeDate('2:30 PM on Nov 9 2023', NOW)).toEqual(expected);
   });
 
   it('returns parsed JSON from Gemini (second resolution)', async () => {
@@ -403,21 +400,17 @@ describe('normalizeDate', () => {
       description: 'midnight, January 1st, 2000',
     };
     mockGenerateContent(expected);
-    expect(await normalizeDate('midnight New Year 2000', NOW, API_KEY)).toEqual(expected);
+    expect(await normalizeDate('midnight New Year 2000', NOW)).toEqual(expected);
   });
 
   it('throws on malformed JSON response', async () => {
-    const instance = new (GoogleGenAI as any)();
-    instance.models.generateContent.mockResolvedValue({
-      candidates: [{ content: { parts: [{ text: 'not json' }] } }],
-    });
-    (GoogleGenAI as any).mockImplementation(function() { return instance; });
-    await expect(normalizeDate('bad input', NOW, API_KEY)).rejects.toThrow('Failed to parse');
+    mockInvokeGemini.mockResolvedValueOnce({ text: 'not json' });
+    await expect(normalizeDate('bad input', NOW)).rejects.toThrow('Failed to parse');
   });
 
   it('throws on missing required fields', async () => {
     mockGenerateContent({ best_estimate: '1997' }); // missing confidence and resolution
-    await expect(normalizeDate('partial', NOW, API_KEY)).rejects.toThrow('Missing required fields');
+    await expect(normalizeDate('partial', NOW)).rejects.toThrow('Missing required fields');
   });
 });
 
@@ -430,15 +423,11 @@ describe('computeTimeDifference', () => {
 
   function setupNormalizeMocks(a: NormalizedDate, b: NormalizedDate) {
     let callCount = 0;
-    const instance = new (GoogleGenAI as any)();
-    instance.models.generateContent.mockImplementation(() => {
+    mockInvokeGemini.mockImplementation(() => {
       callCount++;
       const result = callCount === 1 ? a : b;
-      return Promise.resolve({
-        candidates: [{ content: { parts: [{ text: JSON.stringify(result) }] } }],
-      });
+      return Promise.resolve({ text: JSON.stringify(result) });
     });
-    (GoogleGenAI as any).mockImplementation(function() { return instance; });
   }
 
   it('computes ~27 years between summer 1997 and summer 2024', async () => {
@@ -446,7 +435,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '1997-07', confidence: 'approximate', resolution: 'month', description: 'summer 1997' },
       { best_estimate: '2024-07', confidence: 'approximate', resolution: 'month', description: 'summer 2024' },
     );
-    const { result } = await computeTimeDifference('summer 1997', 'summer 2024', NOW, API_KEY);
+    const { result } = await computeTimeDifference('summer 1997', 'summer 2024', NOW);
     expect(result).toMatch(/27/);
     expect(result).toMatch(/year/);
   });
@@ -454,7 +443,7 @@ describe('computeTimeDifference', () => {
   it('handles same-time inputs', async () => {
     const same: NormalizedDate = { best_estimate: '2000-01-01', confidence: 'exact', resolution: 'day', description: 'January 1st, 2000' };
     setupNormalizeMocks(same, same);
-    const { result } = await computeTimeDifference('January 1 2000', 'January 1 2000', NOW, API_KEY);
+    const { result } = await computeTimeDifference('January 1 2000', 'January 1 2000', NOW);
     expect(result).toMatch(/same time/);
   });
 
@@ -463,7 +452,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '1969-07-20', confidence: 'exact', resolution: 'day', description: 'July 20, 1969 (moon landing)' },
       { best_estimate: '1989-11-09', confidence: 'exact', resolution: 'day', description: 'November 9, 1989 (Berlin Wall)' },
     );
-    const { result } = await computeTimeDifference('moon landing', 'Berlin Wall fell', NOW, API_KEY);
+    const { result } = await computeTimeDifference('moon landing', 'Berlin Wall fell', NOW);
     expect(result).toMatch(/after/);
   });
 
@@ -472,7 +461,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '1989-11-09', confidence: 'exact', resolution: 'day', description: 'November 9, 1989' },
       { best_estimate: '1969-07-20', confidence: 'exact', resolution: 'day', description: 'July 20, 1969' },
     );
-    const { result } = await computeTimeDifference('Berlin Wall fell', 'moon landing', NOW, API_KEY);
+    const { result } = await computeTimeDifference('Berlin Wall fell', 'moon landing', NOW);
     expect(result).toMatch(/before/);
   });
 
@@ -481,7 +470,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '1960', confidence: 'vague', resolution: 'year', description: 'a long time ago' },
       { best_estimate: '2026', confidence: 'exact', resolution: 'year', description: 'now' },
     );
-    const { result } = await computeTimeDifference('a long time ago', 'now', NOW, API_KEY);
+    const { result } = await computeTimeDifference('a long time ago', 'now', NOW);
     expect(result).toMatch(/roughly/);
   });
 
@@ -490,7 +479,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '1965', confidence: 'approximate', resolution: 'decade', description: 'the 1960s' },
       { best_estimate: '2026', confidence: 'exact', resolution: 'year', description: 'now' },
     );
-    const { result } = await computeTimeDifference('the 60s', 'now', NOW, API_KEY);
+    const { result } = await computeTimeDifference('the 60s', 'now', NOW);
     expect(result).toMatch(/about/);
   });
 
@@ -499,7 +488,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '2025-01-01', confidence: 'exact', resolution: 'day', description: 'January 1, 2025' },
       { best_estimate: '2025-04-01', confidence: 'exact', resolution: 'day', description: 'April 1, 2025' },
     );
-    const { result } = await computeTimeDifference('Jan 1 2025', 'April 1 2025', NOW, API_KEY);
+    const { result } = await computeTimeDifference('Jan 1 2025', 'April 1 2025', NOW);
     expect(result).toMatch(/month/);
   });
 
@@ -507,7 +496,7 @@ describe('computeTimeDifference', () => {
     const a: NormalizedDate = { best_estimate: '1997-07', confidence: 'approximate', resolution: 'month', description: 'summer 1997' };
     const b: NormalizedDate = { best_estimate: '2024-07', confidence: 'approximate', resolution: 'month', description: 'summer 2024' };
     setupNormalizeMocks(a, b);
-    const { parsedA, parsedB } = await computeTimeDifference('summer 1997', 'summer 2024', NOW, API_KEY);
+    const { parsedA, parsedB } = await computeTimeDifference('summer 1997', 'summer 2024', NOW);
     expect(parsedA).toEqual(a);
     expect(parsedB).toEqual(b);
   });
@@ -519,7 +508,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '2023-11-09T09:00', confidence: 'exact', resolution: 'minute', description: '9:00 AM' },
       { best_estimate: '2023-11-09T14:00', confidence: 'exact', resolution: 'minute', description: '2:00 PM' },
     );
-    const { result } = await computeTimeDifference('9am', '2pm', NOW, API_KEY);
+    const { result } = await computeTimeDifference('9am', '2pm', NOW);
     expect(result).toMatch(/5 hours/);
     expect(result).toMatch(/after/);
   });
@@ -529,7 +518,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '2023-11-09T14:00', confidence: 'exact', resolution: 'minute', description: '2:00 PM' },
       { best_estimate: '2023-11-09T14:30', confidence: 'exact', resolution: 'minute', description: '2:30 PM' },
     );
-    const { result } = await computeTimeDifference('2pm', '2:30pm', NOW, API_KEY);
+    const { result } = await computeTimeDifference('2pm', '2:30pm', NOW);
     expect(result).toMatch(/30 minutes/);
   });
 
@@ -538,7 +527,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '2000-01-01T00:00:00', confidence: 'exact', resolution: 'second', description: 'midnight' },
       { best_estimate: '2000-01-01T00:00:45', confidence: 'exact', resolution: 'second', description: '45 seconds after midnight' },
     );
-    const { result } = await computeTimeDifference('midnight', '45 seconds after midnight', NOW, API_KEY);
+    const { result } = await computeTimeDifference('midnight', '45 seconds after midnight', NOW);
     expect(result).toMatch(/45 seconds/);
   });
 
@@ -547,7 +536,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '2023-11-09T22:00', confidence: 'exact', resolution: 'hour', description: '10 PM' },
       { best_estimate: '2023-11-10T02:00', confidence: 'exact', resolution: 'hour', description: '2 AM the next day' },
     );
-    const { result } = await computeTimeDifference('10pm', '2am the next day', NOW, API_KEY);
+    const { result } = await computeTimeDifference('10pm', '2am the next day', NOW);
     expect(result).toMatch(/4 hours/);
   });
 
@@ -556,7 +545,7 @@ describe('computeTimeDifference', () => {
       { best_estimate: '2023-11-09T14', confidence: 'approximate', resolution: 'hour', description: 'around 2pm' },
       { best_estimate: '2023-11-09T17', confidence: 'approximate', resolution: 'hour', description: 'around 5pm' },
     );
-    const { result } = await computeTimeDifference('around 2pm', 'around 5pm', NOW, API_KEY);
+    const { result } = await computeTimeDifference('around 2pm', 'around 5pm', NOW);
     expect(result).toMatch(/about/);
     expect(result).toMatch(/hour/);
   });
@@ -571,17 +560,13 @@ describe('computeTimeOffset', () => {
 
   function setupOffsetMocks(baseNorm: NormalizedDate, offsetSeconds: number, offsetDesc: string) {
     let callCount = 0;
-    const instance = new (GoogleGenAI as any)();
-    instance.models.generateContent.mockImplementation(() => {
+    mockInvokeGemini.mockImplementation(() => {
       callCount++;
       const responseJson = callCount === 1
         ? baseNorm
         : { offset_seconds: offsetSeconds, description: offsetDesc };
-      return Promise.resolve({
-        candidates: [{ content: { parts: [{ text: JSON.stringify(responseJson) }] } }],
-      });
+      return Promise.resolve({ text: JSON.stringify(responseJson) });
     });
-    (GoogleGenAI as any).mockImplementation(function() { return instance; });
   }
 
   it('adds 6 months to July 4th 1976 → around January 1977', async () => {
@@ -590,7 +575,7 @@ describe('computeTimeOffset', () => {
       183 * 86400,
       'about 6 months later',
     );
-    const { result } = await computeTimeOffset('July 4th 1976', '6 months later', NOW, API_KEY);
+    const { result } = await computeTimeOffset('July 4th 1976', '6 months later', NOW);
     expect(result).toMatch(/January/);
     expect(result).toMatch(/1977/);
   });
@@ -601,7 +586,7 @@ describe('computeTimeOffset', () => {
       -730 * 86400,
       'about 2 years earlier',
     );
-    const { result } = await computeTimeOffset('1990', '2 years earlier', NOW, API_KEY);
+    const { result } = await computeTimeOffset('1990', '2 years earlier', NOW);
     expect(result).toMatch(/1988/);
   });
 
@@ -611,14 +596,14 @@ describe('computeTimeOffset', () => {
       365 * 86400,
       'one year later',
     );
-    const { result } = await computeTimeOffset('moon landing', 'one year later', NOW, API_KEY);
+    const { result } = await computeTimeOffset('moon landing', 'one year later', NOW);
     expect(result).toMatch(/July 20, 1969/);
   });
 
   it('returns parsedBase', async () => {
     const base: NormalizedDate = { best_estimate: '1969-07-20', confidence: 'exact', resolution: 'day', description: 'July 20, 1969' };
     setupOffsetMocks(base, 365 * 86400, 'one year later');
-    const { parsedBase } = await computeTimeOffset('moon landing', 'one year later', NOW, API_KEY);
+    const { parsedBase } = await computeTimeOffset('moon landing', 'one year later', NOW);
     expect(parsedBase).toEqual(base);
   });
 
@@ -628,22 +613,20 @@ describe('computeTimeOffset', () => {
       0,
       'the same day',
     );
-    const { result } = await computeTimeOffset('June 15 2000', 'same day', NOW, API_KEY);
+    const { result } = await computeTimeOffset('June 15 2000', 'same day', NOW);
     expect(result).toMatch(/June 15, 2000/);
   });
 
   it('throws on malformed offset response', async () => {
     let callCount = 0;
-    const instance = new (GoogleGenAI as any)();
-    instance.models.generateContent.mockImplementation(() => {
+    mockInvokeGemini.mockImplementation(() => {
       callCount++;
       const text = callCount === 1
         ? JSON.stringify({ best_estimate: '1990', confidence: 'exact', resolution: 'year', description: '1990' })
         : 'not json';
-      return Promise.resolve({ candidates: [{ content: { parts: [{ text }] } }] });
+      return Promise.resolve({ text });
     });
-    (GoogleGenAI as any).mockImplementation(function() { return instance; });
-    await expect(computeTimeOffset('1990', 'bad offset', NOW, API_KEY)).rejects.toThrow('Failed to parse offset');
+    await expect(computeTimeOffset('1990', 'bad offset', NOW)).rejects.toThrow('Failed to parse offset');
   });
 
   // --- sub-day offsets ---
@@ -654,7 +637,7 @@ describe('computeTimeOffset', () => {
       1800,
       '30 minutes later',
     );
-    const { result } = await computeTimeOffset('2pm Nov 9 2023', '30 minutes later', NOW, API_KEY);
+    const { result } = await computeTimeOffset('2pm Nov 9 2023', '30 minutes later', NOW);
     expect(result).toMatch(/2:30 PM/);
   });
 
@@ -664,7 +647,7 @@ describe('computeTimeOffset', () => {
       -7200,
       '2 hours earlier',
     );
-    const { result } = await computeTimeOffset('4pm Nov 9 2023', '2 hours earlier', NOW, API_KEY);
+    const { result } = await computeTimeOffset('4pm Nov 9 2023', '2 hours earlier', NOW);
     expect(result).toMatch(/2:00 PM/);
   });
 
@@ -674,7 +657,7 @@ describe('computeTimeOffset', () => {
       45,
       '45 seconds later',
     );
-    const { result } = await computeTimeOffset('midnight New Year 2000', '45 seconds later', NOW, API_KEY);
+    const { result } = await computeTimeOffset('midnight New Year 2000', '45 seconds later', NOW);
     expect(result).toMatch(/12:00:45 AM/);
   });
 
@@ -684,7 +667,7 @@ describe('computeTimeOffset', () => {
       10800,  // 3 hours
       '3 hours later',
     );
-    const { result } = await computeTimeOffset('10pm Nov 9 2023', '3 hours later', NOW, API_KEY);
+    const { result } = await computeTimeOffset('10pm Nov 9 2023', '3 hours later', NOW);
     // 10pm + 3h = 1am Nov 10
     expect(result).toMatch(/1:00 AM/);
     expect(result).toMatch(/November 10/);

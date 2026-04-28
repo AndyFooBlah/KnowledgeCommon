@@ -33,7 +33,6 @@
  */
 
 import { FunctionDeclaration, Type } from '@google/genai';
-import { getKnowledgeConfig } from '../config';
 import { computeTimeDifference, computeTimeOffset } from '../dateTimeUtils';
 
 /** Gemini function declaration for the time-difference tool. */
@@ -111,7 +110,7 @@ export async function getTimeDifference(
   dateB: string,
   currentDateTime: string,
 ): Promise<string> {
-  const { result } = await computeTimeDifference(dateA, dateB, currentDateTime, getKnowledgeConfig().geminiApiKey);
+  const { result } = await computeTimeDifference(dateA, dateB, currentDateTime);
   return result;
 }
 
@@ -124,6 +123,6 @@ export async function getTimeOffset(
   offset: string,
   currentDateTime: string,
 ): Promise<string> {
-  const { result } = await computeTimeOffset(date, offset, currentDateTime, getKnowledgeConfig().geminiApiKey);
+  const { result } = await computeTimeOffset(date, offset, currentDateTime);
   return result;
 }

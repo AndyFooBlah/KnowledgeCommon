@@ -39,7 +39,7 @@
  *   decade | year | month | day | hour | minute | second
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { getKnowledgeConfig } from './config';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -144,15 +144,16 @@ For vague expressions like "a long time ago", pick a reasonable best_estimate an
 
 /**
  * Normalize a natural-language date expression using Gemini.
+ * Routes through the `gemini` broker configured in initializeKnowledgeCommon
+ * — no Gemini API key is held by this module.
  * Exported for testing/mocking.
  */
 export async function normalizeDate(
   expression: string,
   currentDateTime: string,
-  apiKey: string,
 ): Promise<NormalizedDate> {
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
+  const { gemini } = getKnowledgeConfig();
+  const response = await gemini.invokeGemini({
     model: DATETIME_MODEL,
     contents: `Current date/time: ${currentDateTime}\nExpression: "${expression}"`,
     config: {
@@ -162,7 +163,7 @@ export async function normalizeDate(
     },
   });
 
-  const text = response.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const text = response.text ?? '';
   let parsed: NormalizedDate;
   try {
     parsed = JSON.parse(text) as NormalizedDate;
@@ -447,18 +448,16 @@ export function formatDate(
  * @param dateA  First date expression (e.g. "summer 1997", "around 3pm yesterday")
  * @param dateB  Second date expression (e.g. "now", "when I graduated in 2001")
  * @param currentDateTime  Current date/time string (from the session, user's locale)
- * @param apiKey  Gemini API key
  * @returns Human-readable result, e.g. "about 4 years" / "roughly 27 years before" / "about 2 hours after"
  */
 export async function computeTimeDifference(
   dateA: string,
   dateB: string,
   currentDateTime: string,
-  apiKey: string,
 ): Promise<TimeDiffResult> {
   const [normA, normB] = await Promise.all([
-    normalizeDate(dateA, currentDateTime, apiKey),
-    normalizeDate(dateB, currentDateTime, apiKey),
+    normalizeDate(dateA, currentDateTime),
+    normalizeDate(dateB, currentDateTime),
   ]);
 
   const ptA = parseBestEstimate(normA);
@@ -492,22 +491,20 @@ export async function computeTimeDifference(
  * @param date    Base date expression (e.g. "July 4th, 1976", "noon on New Year's Day")
  * @param offset  Offset expression (e.g. "6 months later", "2 hours earlier", "30 minutes after")
  * @param currentDateTime  Current date/time string
- * @param apiKey  Gemini API key
  * @returns Human-readable result, e.g. "around January 1977" or "30 minutes later — around 2:30 PM"
  */
 export async function computeTimeOffset(
   date: string,
   offset: string,
   currentDateTime: string,
-  apiKey: string,
 ): Promise<TimeOffsetResult> {
   // Normalize the base date
-  const normBase = await normalizeDate(date, currentDateTime, apiKey);
+  const normBase = await normalizeDate(date, currentDateTime);
   const ptBase = parseBestEstimate(normBase);
 
-  // Ask Gemini to resolve the offset into a signed number of seconds
-  const ai = new GoogleGenAI({ apiKey });
-  const offsetResponse = await ai.models.generateContent({
+  // Resolve the offset into a signed number of seconds via the broker
+  const { gemini } = getKnowledgeConfig();
+  const offsetResponse = await gemini.invokeGemini({
     model: DATETIME_MODEL,
     contents: `Base date: "${date}" (interpreted as: ${normBase.description})\nOffset expression: "${offset}"`,
     config: {
@@ -530,7 +527,7 @@ Examples:
     },
   });
 
-  const offsetText = offsetResponse.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const offsetText = offsetResponse.text ?? '';
   let offsetSeconds: number;
   let offsetDesc: string;
   try {
