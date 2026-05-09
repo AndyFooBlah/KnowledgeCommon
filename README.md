@@ -12,17 +12,21 @@ Used by [CarBot](https://github.com/AndyFooBlah/CarBot) and [LegacyBot](https://
 npm install @andyfooblah/knowledge-common
 ```
 
-Call `initializeKnowledgeCommon` once at app startup before using any tools:
+Call `initializeKnowledgeCommon` once at app startup before using any tools. KnowledgeCommon does **not** accept a long-lived Gemini API key — every Gemini call goes through a server-side broker that you supply:
 
 ```typescript
 import { initializeKnowledgeCommon } from '@andyfooblah/knowledge-common';
+import { invokeGemini, embedGemini } from './services/geminiBroker'; // your own server-side wrappers
 
 initializeKnowledgeCommon({
-  geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY,
-  mapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY, // optional
-  firestore: db,                                         // optional — enables Wikipedia caching
+  // Required: thin wrappers around your own Cloud Function callables that
+  // hold GEMINI_API_KEY in Secret Manager. The browser never holds the key.
+  gemini: { invokeGemini, embedContent: embedGemini },
+  firestore: db,                                          // optional — enables Wikipedia caching
 });
 ```
+
+See the [Tool overrides](#tool-overrides) section below for how to wire Maps/Weather through server-side proxies as well — KnowledgeCommon expects every external credential to live server-side.
 
 Then pass `allKnowledgeTools` to the Gemini Live API alongside your own tool declarations:
 
@@ -47,7 +51,7 @@ const { startSession } = useSession({
 
 ### Weather
 
-Fetches current weather for a location. Requires `mapsApiKey` (Google Maps Weather API) or a `toolOverrides.getWeather` function.
+Fetches current weather for a location. Requires a `toolOverrides.getWeather` function that calls a server-side Maps Weather API proxy.
 
 | Export | Description |
 |--------|-------------|
@@ -56,7 +60,7 @@ Fetches current weather for a location. Requires `mapsApiKey` (Google Maps Weath
 
 ### Maps
 
-Geocoding and distance calculation. Requires `mapsApiKey` (Google Maps Geocoding API) or overrides.
+Geocoding and distance calculation. Requires `toolOverrides.searchPlace` and `toolOverrides.getDistanceBetweenPlaces` that call server-side Maps Geocoding proxies.
 
 | Export | Description |
 |--------|-------------|
@@ -98,17 +102,18 @@ Handles fuzzy date arithmetic — useful for voice apps where users say things l
 
 ## Tool overrides
 
-By default, Maps and Weather tools call Google's APIs directly from the browser — which exposes the Maps key in the client bundle. Apps that want server-side proxying (key security, CORS compliance) can provide override functions via `toolOverrides`.
+KnowledgeCommon never holds an external API key directly — Maps, Weather, and Wikipedia cache writes all flow through consumer-supplied callbacks. Pass them via `toolOverrides`:
 
 Each override completely replaces the corresponding tool's network call. The signature matches what the Gemini tool handler already passes, so existing wrapper functions can be plugged in directly.
 
 ```typescript
-// LegacyBot: proxy Maps + Weather through Firebase callable functions
+// LegacyBot: proxy every external call through Firebase callable functions
 import { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke }
   from './services/externalSearch'; // these call httpsCallable internally
+import { invokeGemini, embedGemini } from './services/geminiBroker';
 
 initializeKnowledgeCommon({
-  geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY,
+  gemini: { invokeGemini, embedContent: embedGemini },
   firestore: db,
   toolOverrides: {
     searchPlace,
@@ -140,10 +145,11 @@ Must be called once at app startup before any tools are used.
 
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
-| `geminiApiKey` | `string` | Yes | Gemini API key — used for Wikipedia embedding and date/time tools |
-| `mapsApiKey` | `string` | No | Google Maps API key — required for Maps and Weather without overrides |
+| `gemini` | `KnowledgeGeminiBroker` | Yes | Server-side Gemini broker — `{ invokeGemini, embedContent }`. The library never holds a long-lived key; consumers wire these to their own Cloud Function callables that hold `GEMINI_API_KEY` in Secret Manager. |
 | `firestore` | `Firestore` | No | Initialized Firestore instance — enables Wikipedia embedding cache |
-| `toolOverrides` | `KnowledgeToolOverrides` | No | Replace direct API calls with your own proxy functions |
+| `toolOverrides` | `KnowledgeToolOverrides` | No | Replace direct API calls with your own server-side proxies (Maps, Weather, Wikipedia cache write) |
+| `cacheWikipediaArticle` | `(articleId, title) => Promise<{ chunkCount }>` | No | Server-side Wikipedia cache filler — required when Firestore rules deny client writes to `wikipedia_cache` (recommended posture) |
+| `debug` | `boolean` | No | Enables verbose logs that may include user query text. Off by default. |
 
 ### `allKnowledgeTools`
 
