@@ -429,8 +429,16 @@ async function filterRelevantArticles(
       ),
     ]);
 
+    // Even with responseMimeType: 'application/json', Gemini occasionally
+    // returns the JSON array followed by trailing whitespace, a stray
+    // newline, or a partial second response — strict JSON.parse rejects
+    // any of those. Slice out the first [...] block (our schema is a flat
+    // top-level array of integers) so trailing junk can't break the parse.
     const text = response.text?.trim() ?? '[]';
-    const indices = JSON.parse(text) as number[];
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+    const arrayText = start !== -1 && end > start ? text.slice(start, end + 1) : '[]';
+    const indices = JSON.parse(arrayText) as number[];
 
     if (!Array.isArray(indices)) throw new Error('Expected array');
 
