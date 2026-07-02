@@ -24,14 +24,15 @@
  * Flow per call:
  *   1. Wikipedia OpenSearch → 5 candidate article titles
  *   2. Fetch short summaries for all 5 candidates (parallel)
- *   3. Ask Gemini Flash Lite to pick up to 3 articles actually relevant to
- *      the question — avoids downloading/embedding irrelevant full articles
- *   4. For each confirmed article, check `wikipedia_cache/{articleId}` freshness
- *      (skipped if no Firestore instance configured)
+ *   3. Embed [question, ...summaries] in one batch and rank candidates by
+ *      cosine similarity, keeping the top 3 — avoids a slow LLM relevance
+ *      filter and downloading/embedding irrelevant full articles
+ *   4. For each confirmed article (in parallel), check
+ *      `wikipedia_cache/{articleId}` freshness (skipped if no Firestore)
  *   5. If stale or missing: fetch full article, chunk, batch-embed, store
- *   6. Embed the user's question
- *   7. Client-side cosine similarity against cached chunk embeddings
- *   8. Return top chunks grouped by article, ordered by chunkIndex
+ *   6. Client-side cosine similarity (reusing the question embedding) against
+ *      cached chunk embeddings
+ *   7. Return top chunks grouped by article, ordered by chunkIndex
  *
  * Firestore schema (written into the application's Firestore database):
  *   wikipedia_cache/{articleId}          → { title, fetchedAt, chunkCount }
@@ -62,7 +63,6 @@ const OVERLAP_CHARS = 400;         // ≈ 100 tokens overlap
 const SEARCH_CANDIDATES = 5;       // articles fetched from OpenSearch
 const MAX_CONFIRMED_ARTICLES = 3;  // articles passed to the full RAG pipeline
 const EMBED_MODEL = 'gemini-embedding-001';
-const FILTER_MODEL = 'gemini-3.1-flash-lite-preview';
 
 // M8: client-side rate limit mirroring jokes.ts. Each search costs a
 // Gemini embedding call plus up to 3 article fetch+embed pipelines, so a
@@ -209,42 +209,36 @@ export async function searchWikipedia(args: {
     }
     console.log(`[Wikipedia] Fetched ${summaries.filter(Boolean).length} summaries (${Date.now() - tSummaries}ms)`);
 
-    // --- 3. Ask Gemini Flash Lite to filter down to the relevant articles ---
-    const tFilter = Date.now();
-    let confirmedTitles: string[];
-    try {
-      confirmedTitles = await filterRelevantArticles(question, candidates, summaries);
-    } catch (err) {
-      console.error(`[Wikipedia] Gemini filter failed (${Date.now() - tFilter}ms):`, err);
-      confirmedTitles = candidates.slice(0, MAX_CONFIRMED_ARTICLES);
-    }
-    if (debug) {
-      console.log(
-        `[Wikipedia] Gemini filter (${Date.now() - tFilter}ms) → ` +
-        `kept ${confirmedTitles.length}/${candidates.length}: ${confirmedTitles.join(', ')}`,
-      );
-    } else {
-      console.log(
-        `[Wikipedia] Gemini filter (${Date.now() - tFilter}ms) → ` +
-        `kept ${confirmedTitles.length}/${candidates.length}`,
-      );
-    }
-
-    if (confirmedTitles.length === 0) {
-      if (debug) {
-        console.log(`[Wikipedia] Gemini filter rejected all candidates for "${question}"`);
-      }
-      return `No Wikipedia articles were found to be relevant to "${question}".`;
-    }
-
-    // --- 4. Embed the question ---
-    const tEmbed = Date.now();
-    const questionEmbedding = await embedTexts([question]);
-    if (!questionEmbedding[0]) {
+    // --- 3+4. Rank candidates by embedding similarity (not a slow LLM filter) ---
+    // Embed [question, ...summaries] in a SINGLE batch, then rank candidates by
+    // cosine similarity of question↔summary. This replaces a ~9s Gemini
+    // relevance-filter call AND the separate question embed with one embedding
+    // round-trip — a large latency win for a real-time voice tool. `qVec` (the
+    // first embedding) is reused below to score article chunks.
+    const tRank = Date.now();
+    const rankInputs = [question, ...candidates.map((title, i) => summaries[i]?.extract || title)];
+    const rankEmbeddings = await embedTexts(rankInputs);
+    const qVec = rankEmbeddings[0];
+    if (!qVec) {
       return 'Unable to embed question for Wikipedia search.';
     }
-    const qVec = questionEmbedding[0];
-    console.log(`[Wikipedia] Question embedded (${Date.now() - tEmbed}ms)`);
+    const confirmedTitles = candidates
+      .map((title, i) => ({
+        title,
+        score: rankEmbeddings[i + 1] ? cosineSimilarity(qVec, rankEmbeddings[i + 1]!) : -1,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_CONFIRMED_ARTICLES)
+      .filter((c) => c.score > 0)
+      .map((c) => c.title);
+    console.log(
+      `[Wikipedia] Ranked candidates by embedding (${Date.now() - tRank}ms) → ` +
+      `kept ${confirmedTitles.length}/${candidates.length}${debug ? ': ' + confirmedTitles.join(', ') : ''}`,
+    );
+
+    if (confirmedTitles.length === 0) {
+      return `No Wikipedia articles were found to be relevant to "${question}".`;
+    }
 
     // --- 5. For each confirmed article: ensure cache is fresh, then score chunks ---
     const maxAgeMs = maxAgeDays * 86400 * 1000;
@@ -255,13 +249,24 @@ export async function searchWikipedia(args: {
       score: number;
     }> = [];
 
-    for (const title of confirmedTitles) {
-      const articleId = titleToId(title);
-      const chunks = skipCache
-        ? await fetchArticleChunksNoCacheInternal(title)
-        : await getOrFetchArticleChunks(db!, articleId, title, maxAgeMs);
-      if (chunks.length === 0) continue;
+    // Fetch/embed all confirmed articles concurrently — they're independent, and
+    // an uncached article fetch+embed is the other big latency cost.
+    const perArticle = await Promise.all(
+      confirmedTitles.map(async (title) => {
+        const articleId = titleToId(title);
+        try {
+          const chunks = skipCache
+            ? await fetchArticleChunksNoCacheInternal(title)
+            : await getOrFetchArticleChunks(db!, articleId, title, maxAgeMs);
+          return { title, chunks };
+        } catch (err) {
+          console.error(`[Wikipedia] Article fetch failed for "${title}":`, err);
+          return { title, chunks: [] as { text: string; chunkIndex: number; embedding: number[] }[] };
+        }
+      }),
+    );
 
+    for (const { title, chunks } of perArticle) {
       for (const chunk of chunks) {
         const score = cosineSimilarity(qVec, chunk.embedding);
         allScoredChunks.push({ articleTitle: title, chunkIndex: chunk.chunkIndex, text: chunk.text, score });
@@ -364,91 +369,6 @@ export async function fetchSummary(title: string): Promise<ArticleSummary | null
     };
   } catch {
     return null;
-  }
-}
-
-/**
- * M7: Wikipedia titles + summaries are attacker-controllable — anyone can
- * rename a Wikipedia article to inject prompt directives that would make
- * the filter model always return `[1, 2, 3, 4, 5]` (cost-amplification) or
- * follow arbitrary instructions. Strip control chars, collapse whitespace,
- * and neutralise the closing quote so a crafted title can't escape the
- * `"${title}"` context in the filter prompt.
- */
-function sanitizeForPrompt(s: string): string {
-  return s
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/"/g, '\u201D')
-    .trim();
-}
-
-async function filterRelevantArticles(
-  question: string,
-  candidates: string[],
-  summaries: Array<ArticleSummary | null>,
-): Promise<string[]> {
-  const articleList = candidates.map((title, i) => {
-    const summary = summaries[i];
-    const safeTitle = sanitizeForPrompt(title);
-    const desc = summary?.description
-      ? ` — ${sanitizeForPrompt(summary.description)}`
-      : '';
-    const rawExtract = summary?.extract ?? '';
-    const clippedExtract = rawExtract.slice(0, 300) + (rawExtract.length > 300 ? '...' : '');
-    const extract = clippedExtract
-      ? `\n   ${sanitizeForPrompt(clippedExtract)}`
-      : '';
-    return `${i + 1}. "${safeTitle}"${desc}${extract}`;
-  }).join('\n\n');
-
-  const prompt =
-    `The user is looking for information to answer this question:\n"${question}"\n\n` +
-    `Here are ${candidates.length} Wikipedia articles that came up in a search, ` +
-    `with their short summaries:\n\n${articleList}\n\n` +
-    `Which of these articles (if any) are likely to contain information relevant ` +
-    `to the question? Return ONLY a JSON array of the article numbers (1-based integers) ` +
-    `that are relevant. Return an empty array if none are relevant. ` +
-    `Return at most ${MAX_CONFIRMED_ARTICLES} articles. ` +
-    `Example: [1, 3]`;
-
-  try {
-    const { gemini } = getKnowledgeConfig();
-
-    const response = await Promise.race([
-      gemini.invokeGemini({
-        model: FILTER_MODEL,
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          temperature: 0,
-        },
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini filter timed out after 10s')), 10000),
-      ),
-    ]);
-
-    // Even with responseMimeType: 'application/json', Gemini occasionally
-    // returns the JSON array followed by trailing whitespace, a stray
-    // newline, or a partial second response — strict JSON.parse rejects
-    // any of those. Slice out the first [...] block (our schema is a flat
-    // top-level array of integers) so trailing junk can't break the parse.
-    const text = response.text?.trim() ?? '[]';
-    const start = text.indexOf('[');
-    const end = text.lastIndexOf(']');
-    const arrayText = start !== -1 && end > start ? text.slice(start, end + 1) : '[]';
-    const indices = JSON.parse(arrayText) as number[];
-
-    if (!Array.isArray(indices)) throw new Error('Expected array');
-
-    return indices
-      .filter((i) => typeof i === 'number' && i >= 1 && i <= candidates.length)
-      .slice(0, MAX_CONFIRMED_ARTICLES)
-      .map((i) => candidates[i - 1]);
-  } catch (err) {
-    console.warn('[Wikipedia] Gemini filter failed, falling back to top candidates:', err);
-    return candidates.slice(0, MAX_CONFIRMED_ARTICLES);
   }
 }
 
