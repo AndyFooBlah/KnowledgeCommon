@@ -25,7 +25,9 @@ import {
 // ---------------------------------------------------------------------------
 
 vi.mock('../../../services/config', () => ({
-  getKnowledgeConfig: vi.fn().mockReturnValue({ geminiApiKey: 'test-key' }),
+  getKnowledgeConfig: vi.fn().mockReturnValue({
+    gemini: { invokeGemini: vi.fn(), embedContent: vi.fn() },
+  }),
 }));
 
 vi.mock('../../../services/dateTimeUtils', () => ({

@@ -29,23 +29,25 @@ import type { Firestore } from 'firebase/firestore';
 /**
  * Optional function overrides for Maps, Weather, and Jokes tools.
  *
- * By default, KnowledgeCommon calls Google Maps and JokeAPI directly from the
- * browser using `mapsApiKey`. This exposes the Maps key in the client bundle and
- * requires CORS-compatible endpoints (Google's Weather API is browser-blocked).
+ * KnowledgeCommon never calls Google Maps or the Weather API directly and
+ * never holds a Maps API key — the Maps and Weather tools only work when the
+ * consuming app supplies these overrides (typically thin wrappers around its
+ * own server-side proxies, e.g. Firebase callable functions). Without an
+ * override, those tools return a "not configured" message. Jokes (JokeAPI,
+ * keyless) works without an override but can also be proxied if desired.
  *
- * Apps that need server-side proxying (API key security, CORS) can provide
- * override functions here. Each override completely replaces the corresponding
- * tool's network call. The signatures match what the Gemini tool handler
- * already passes, so existing `externalSearch.ts` wrappers can be plugged in
- * directly.
+ * Each override completely replaces the corresponding tool's network call.
+ * The signatures match what the Gemini tool handler already passes, so
+ * existing wrapper functions can be plugged in directly.
  *
  * @example LegacyBot using Firebase callable functions as the proxy:
  * ```ts
  * import { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke }
  *   from './services/externalSearch';
+ * import { invokeGemini, embedGemini } from './services/geminiBroker';
  *
  * initializeKnowledgeCommon({
- *   geminiApiKey: '...',
+ *   gemini: { invokeGemini, embedContent: embedGemini },
  *   firestore: db,
  *   toolOverrides: { searchPlace, getDistanceBetweenPlaces, getWeather, getJoke },
  * });
@@ -66,8 +68,8 @@ export interface KnowledgeToolOverrides {
  * Server-side broker for Gemini calls. Required by `KnowledgeCommonConfig`.
  *
  * KnowledgeCommon **never** holds a Gemini API key directly. Every Gemini call
- * — Wikipedia article filtering, embedding for RAG, natural-language date
- * parsing — goes through this broker, which the consuming application
+ * — embedding for Wikipedia RAG candidate ranking and chunk scoring,
+ * natural-language date parsing — goes through this broker, which the consuming application
  * implements as a thin wrapper around its own Cloud Functions / serverless
  * endpoints. The long-lived `GEMINI_API_KEY` lives only in the consumer's
  * server-side secret store (e.g. Firebase Secret Manager) and never reaches
@@ -115,12 +117,6 @@ export interface KnowledgeCommonConfig {
    */
   gemini: KnowledgeGeminiBroker;
   /**
-   * Google Maps API key. Required for Maps and Weather tools when NOT using
-   * toolOverrides. Both tools degrade gracefully when neither key nor override
-   * is configured.
-   */
-  mapsApiKey?: string;
-  /**
    * Initialized Firestore instance from the consuming application.
    * Used by the Wikipedia tool to cache article embeddings in the
    * `wikipedia_cache` top-level collection.
@@ -142,7 +138,8 @@ export interface KnowledgeCommonConfig {
    */
   debug?: boolean;
   /**
-   * Server-side Wikipedia cache filler (SECURITY_REVIEW H2).
+   * Server-side Wikipedia cache filler — exists so the shared article cache
+   * cannot be poisoned by any authenticated client.
    *
    * When consumer apps deny client writes to `wikipedia_cache` in Firestore
    * rules — the recommended posture, since any authenticated user could

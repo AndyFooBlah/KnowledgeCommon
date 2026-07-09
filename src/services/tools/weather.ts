@@ -15,10 +15,12 @@
 /**
  * Weather tool for KnowledgeCommon.
  *
- * Uses the Google Maps Geocoding API to resolve a location name to
- * coordinates, then the Google Maps Weather API to fetch current conditions.
+ * Fetches current weather conditions for a named location.
  *
- * Requires: mapsApiKey in KnowledgeCommonConfig with Geocoding API and Weather API enabled.
+ * Requires: `toolOverrides.getWeather` in KnowledgeCommonConfig — a
+ * consumer-supplied server-side proxy (e.g. a Firebase callable wrapping the
+ * Google Maps Geocoding + Weather APIs). Without it, the tool returns a
+ * "not configured" message.
  */
 
 import { FunctionDeclaration, Type } from '@google/genai';
@@ -41,11 +43,11 @@ export const weatherTool: FunctionDeclaration = {
 };
 
 /**
- * H4 fix: the direct-browser Google Weather fetch was removed. The Google
- * Weather API does not send CORS headers, so browser-direct calls were
- * already guaranteed to fail — the direct path was a silent-broken tool.
- * Consumers MUST now supply `toolOverrides.getWeather` (typically a
- * Firebase callable that proxies Weather server-side).
+ * There is deliberately no direct-browser Google Weather fetch here: it would
+ * ship an API key in the client bundle, and the Google Weather API does not
+ * send CORS headers anyway, so browser-direct calls are guaranteed to fail.
+ * Consumers MUST supply `toolOverrides.getWeather` (typically a Firebase
+ * callable that proxies Weather server-side).
  */
 
 /** Execute the weather tool. Returns a human-readable weather summary. */

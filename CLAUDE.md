@@ -2,7 +2,7 @@
 
 ## 🔑 Sensitive API keys — read first
 
-**KnowledgeCommon is a library and never holds a Gemini API key.** Every internal Gemini call (Wikipedia RAG embeddings + filtering, date/time normalization) goes through the consumer-supplied `gemini` broker:
+**KnowledgeCommon is a library and never holds a Gemini API key.** Every internal Gemini call (Wikipedia RAG embedding ranking, date/time normalization) goes through the consumer-supplied `gemini` broker:
 
 ```ts
 initializeKnowledgeCommon({
@@ -69,7 +69,7 @@ git push origin v0.2.0
 
 ### What KnowledgeCommon is
 
-A pure TypeScript npm library (`@andyfooblah/knowledgecommon`) — no React, no
+A pure TypeScript npm library (`@andyfooblah/knowledge-common`) — no React, no
 Firebase initialization. It provides Gemini `FunctionDeclaration` objects and
 their async implementations for general-purpose knowledge tools:
 
@@ -84,13 +84,18 @@ their async implementations for general-purpose knowledge tools:
 Consumers call `initializeKnowledgeCommon(config)` once at startup:
 
 ```ts
-import { initializeKnowledgeCommon } from '@andyfooblah/knowledgecommon';
+import { initializeKnowledgeCommon } from '@andyfooblah/knowledge-common';
+import { invokeGemini, embedGemini } from './services/geminiBroker'; // consumer's server-side proxies
 
 initializeKnowledgeCommon({
-  geminiApiKey: 'AIza...',     // required — for Wikipedia + date/time tools
-  mapsApiKey: 'AIza...',       // optional — for Maps + Weather tools
+  gemini: { invokeGemini, embedContent: embedGemini },
+                               // required — server-side broker for every Gemini call
+                               //   (Wikipedia RAG + date/time tools); no API key in the client
   firestore: db,               // optional — for Wikipedia embedding cache
                                //   omit to skip caching (Wikipedia still works, just slower)
+  toolOverrides: { searchPlace, getDistanceBetweenPlaces, getWeather },
+                               // required for Maps + Weather tools — server-side proxies;
+                               //   without them those tools report "not configured"
 });
 ```
 

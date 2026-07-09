@@ -15,11 +15,14 @@
 /**
  * Maps tools for KnowledgeCommon.
  *
- * Provides place search and distance calculation using the Google Maps
- * Geocoding API. Results are returned as human-readable strings suitable
- * for use in voice conversation — no coordinates are exposed to the AI.
+ * Provides place search and distance calculation. Results are returned as
+ * human-readable strings suitable for use in voice conversation — no
+ * coordinates are exposed to the AI.
  *
- * Requires: mapsApiKey in KnowledgeCommonConfig with Geocoding API enabled.
+ * Requires: `toolOverrides.searchPlace` and `toolOverrides.getDistanceBetweenPlaces`
+ * in KnowledgeCommonConfig — consumer-supplied server-side proxies (e.g. Firebase
+ * callables wrapping the Google Maps Geocoding API). Without them, both tools
+ * return a "not configured" message.
  */
 
 import { FunctionDeclaration, Type } from '@google/genai';
@@ -70,10 +73,11 @@ export const distanceTool: FunctionDeclaration = {
 // ---------------------------------------------------------------------------
 
 /**
- * H3 fix: the direct-browser Google Maps fetch was removed. Consumers MUST
- * now supply `toolOverrides.searchPlace` / `getDistanceBetweenPlaces`
- * (typically a Firebase callable that proxies Maps server-side). Exposing
- * the Maps key in a client bundle was a live-exposure footgun.
+ * There is deliberately no direct-browser Google Maps fetch here: it would
+ * require shipping a Maps API key in the client bundle, where it can be
+ * scraped and abused. Consumers MUST supply `toolOverrides.searchPlace` /
+ * `getDistanceBetweenPlaces` (typically a Firebase callable that proxies
+ * Maps server-side).
  */
 
 const NO_OVERRIDE_MSG =

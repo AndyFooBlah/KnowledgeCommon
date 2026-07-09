@@ -28,19 +28,44 @@ initializeKnowledgeCommon({
 
 See the [Tool overrides](#tool-overrides) section below for how to wire Maps/Weather through server-side proxies as well — KnowledgeCommon expects every external credential to live server-side.
 
-Then pass `allKnowledgeTools` to the Gemini Live API alongside your own tool declarations:
+Then pass `allKnowledgeTools` to the Gemini Live API alongside your own tool declarations, and dispatch tool calls to the matching implementation functions by name:
 
 ```typescript
-import { allKnowledgeTools } from '@andyfooblah/knowledge-common';
+import {
+  allKnowledgeTools,
+  getWeather,
+  searchPlace,
+  getDistanceBetweenPlaces,
+  getJoke,
+  searchWikipedia,
+  getTimeDifference,
+  getTimeOffset,
+} from '@andyfooblah/knowledge-common';
 
 const { startSession } = useSession({
   userId: user.uid,
   systemInstruction,
   tools: [...allKnowledgeTools, ...myAppTools],
-  onToolCall: async (name, args) => {
-    // KC tool calls are dispatched automatically when you use the KC handler helpers.
-    // Add your own cases first, then fall through to KC.
-    return dispatchKnowledgeTool(name, args);
+  onToolCall: async (name: string, args: Record<string, any>): Promise<string> => {
+    switch (name) {
+      // Add your own app's tool cases first, then the KnowledgeCommon tools:
+      case 'getWeather':
+        return getWeather(args.location);
+      case 'searchPlace':
+        return searchPlace(args.query);
+      case 'getDistanceBetweenPlaces':
+        return getDistanceBetweenPlaces(args.from, args.to);
+      case 'getJoke':
+        return getJoke(args.category);
+      case 'searchWikipedia':
+        return searchWikipedia({ question: args.question, maxChunks: args.maxChunks, maxAgeDays: args.maxAgeDays });
+      case 'computeTimeDifference':
+        return getTimeDifference(args.dateA, args.dateB, args.currentDateTime);
+      case 'computeTimeOffset':
+        return getTimeOffset(args.date, args.offset, args.currentDateTime);
+      default:
+        return `Unknown tool: ${name}`;
+    }
   },
 });
 ```
@@ -85,7 +110,7 @@ Searches Wikipedia and uses Gemini embeddings to rank and return the most releva
 | Export | Description |
 |--------|-------------|
 | `wikipediaTool` | `FunctionDeclaration` to pass to Gemini |
-| `searchWikipedia(query)` | Search Wikipedia and return the best matching passage |
+| `searchWikipedia({ question, maxChunks?, maxAgeDays? })` | Search Wikipedia and return the best matching passages |
 
 ### DateTime
 
@@ -95,8 +120,8 @@ Handles fuzzy date arithmetic — useful for voice apps where users say things l
 |--------|-------------|
 | `computeTimeDifferenceTool` | `FunctionDeclaration` for time difference queries |
 | `computeTimeOffsetTool` | `FunctionDeclaration` for time offset queries |
-| `getTimeDifference(from, to)` | Compute the duration between two dates |
-| `getTimeOffset(base, offset)` | Compute a date relative to a base |
+| `getTimeDifference(dateA, dateB, currentDateTime)` | Compute the duration between two natural-language date expressions |
+| `getTimeOffset(date, offset, currentDateTime)` | Compute a date relative to a base date expression |
 
 ---
 
@@ -161,8 +186,8 @@ A `FunctionDeclaration[]` containing all five tool categories, ready to spread i
 
 ```json
 {
-  "@google/genai": ">=1.0.0",
-  "firebase": ">=12.0.0"
+  "@google/genai": "^1.0.0",
+  "firebase": "^12.0.0"
 }
 ```
 
@@ -171,6 +196,29 @@ The consuming app is responsible for Firebase initialization. Pass the initializ
 ---
 
 ## Version history
+
+### v1.2.0
+
+- **Removed** the dead `mapsApiKey` config field — nothing in the library read it since the direct-browser Maps/Weather paths were removed; Maps and Weather are override-only (`toolOverrides`)
+- Fetched third-party text (Wikipedia passages, jokes) is now returned to the model inside a clearly labeled untrusted-data block
+- Wikipedia timing/progress logs are now gated behind the `debug` config flag
+- `offset_seconds` returned by the date-offset LLM call is validated (finite number) before use
+- Dependency cleanup: `@google/genai` and `firebase` are peer dependencies only (bounded `^` ranges), no longer duplicated in `dependencies`
+- Added the Apache 2.0 `LICENSE` file; CI/publish workflows pin actions by commit SHA and align on Node 22
+
+### v1.1.0
+
+- Wikipedia candidate selection now ranks articles by embedding cosine similarity — replaces the slow LLM relevance filter with a single batched embedding call
+
+### v1.0.1
+
+- Wikipedia relevance filter: tolerate trailing junk after the JSON array in the LLM response
+
+### v1.0.0
+
+- **Breaking:** `geminiApiKey` removed from `KnowledgeCommonConfig`. All Gemini calls go through the required `gemini` broker (`{ invokeGemini, embedContent }`) supplied by the consumer — the library never holds a Gemini API key
+- Direct-browser Google Maps/Weather calls removed; Maps and Weather require `toolOverrides` server-side proxies
+- Added `cacheWikipediaArticle` server-side cache-filler hook and client-side rate limits for Wikipedia and Jokes
 
 ### v0.3.0
 

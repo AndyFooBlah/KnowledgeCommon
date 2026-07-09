@@ -29,10 +29,10 @@
  *   3. Qualify the human-readable output with the inferred confidence level.
  *
  * Public API:
- *   computeTimeDifference(dateA, dateB, currentDateTime, apiKey)
+ *   computeTimeDifference(dateA, dateB, currentDateTime)
  *     → "about 27 years" / "roughly 3 months before" / "about 2 hours after"
  *
- *   computeTimeOffset(date, offset, currentDateTime, apiKey)
+ *   computeTimeOffset(date, offset, currentDateTime)
  *     → "around January 1977" / "30 minutes later — around 2:30 PM"
  *
  * Resolution support (coarsest → finest):
@@ -536,6 +536,11 @@ Examples:
     offsetDesc = parsed.description;
   } catch {
     throw new Error(`Failed to parse offset response: ${offsetText.slice(0, 200)}`);
+  }
+  // LLM output is untrusted: a missing or non-numeric offset_seconds would
+  // become NaN in the date arithmetic below and produce garbage output.
+  if (typeof offsetSeconds !== 'number' || !Number.isFinite(offsetSeconds)) {
+    throw new Error(`Invalid offset_seconds in offset response: ${offsetText.slice(0, 200)}`);
   }
 
   // Apply the offset

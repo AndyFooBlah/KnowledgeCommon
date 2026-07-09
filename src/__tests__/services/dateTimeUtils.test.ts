@@ -629,6 +629,30 @@ describe('computeTimeOffset', () => {
     await expect(computeTimeOffset('1990', 'bad offset', NOW)).rejects.toThrow('Failed to parse offset');
   });
 
+  it('throws when offset_seconds is a string instead of a number', async () => {
+    let callCount = 0;
+    mockInvokeGemini.mockImplementation(() => {
+      callCount++;
+      const text = callCount === 1
+        ? JSON.stringify({ best_estimate: '1990', confidence: 'exact', resolution: 'year', description: '1990' })
+        : JSON.stringify({ offset_seconds: '1800', description: '30 minutes later' });
+      return Promise.resolve({ text });
+    });
+    await expect(computeTimeOffset('1990', '30 minutes later', NOW)).rejects.toThrow('Invalid offset_seconds');
+  });
+
+  it('throws when offset_seconds is missing', async () => {
+    let callCount = 0;
+    mockInvokeGemini.mockImplementation(() => {
+      callCount++;
+      const text = callCount === 1
+        ? JSON.stringify({ best_estimate: '1990', confidence: 'exact', resolution: 'year', description: '1990' })
+        : JSON.stringify({ description: 'an offset with no seconds' });
+      return Promise.resolve({ text });
+    });
+    await expect(computeTimeOffset('1990', 'some offset', NOW)).rejects.toThrow('Invalid offset_seconds');
+  });
+
   // --- sub-day offsets ---
 
   it('adds 30 minutes to a specific time', async () => {
