@@ -57,7 +57,8 @@ npm run build:lib          # build the ESM library bundle into dist/
 ## Publishing
 
 Publish is triggered by pushing a `v*` tag (e.g. `v0.2.0`). The CI workflow
-runs tests, builds the library, and publishes to GitHub Packages automatically.
+runs tests, builds the library, and publishes to npmjs.org automatically
+(requires the `NPM_TOKEN` repo secret — an npm automation token).
 
 ```bash
 # bump version in package.json first, then:

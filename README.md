@@ -197,6 +197,10 @@ The consuming app is responsible for Firebase initialization. Pass the initializ
 
 ## Version history
 
+### v1.2.1
+
+- Widened the `@google/genai` peer range to `^1.0.0 || ^2.0.0` — the library only uses type-level exports (`FunctionDeclaration`, `Type`) that are identical across both majors, and consumers (e.g. VoiceCommon) are on v2
+
 ### v1.2.0
 
 - **Removed** the dead `mapsApiKey` config field — nothing in the library read it since the direct-browser Maps/Weather paths were removed; Maps and Weather are override-only (`toolOverrides`)
