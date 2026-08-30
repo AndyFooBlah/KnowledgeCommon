@@ -20,7 +20,12 @@
  */
 
 // Initialization
-export { initializeKnowledgeCommon, getKnowledgeConfig } from './services/config';
+// NOTE: getKnowledgeConfig is intentionally NOT re-exported (#4). It is an
+// internal accessor whose returned config holds consumer-supplied values
+// (e.g. a plain mapsApiKey string); exposing it publicly would let any code
+// with the package imported read those values. Internal modules import it
+// directly from './services/config'.
+export { initializeKnowledgeCommon } from './services/config';
 export type { KnowledgeCommonConfig, KnowledgeToolOverrides } from './services/config';
 
 // Tools
