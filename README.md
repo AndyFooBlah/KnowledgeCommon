@@ -123,6 +123,8 @@ Handles fuzzy date arithmetic — useful for voice apps where users say things l
 | `getTimeDifference(dateA, dateB, currentDateTime)` | Compute the duration between two natural-language date expressions |
 | `getTimeOffset(date, offset, currentDateTime)` | Compute a date relative to a base date expression |
 
+Both tools normalize the expressions with a small Gemini model through your broker (`DEFAULT_MODELS.dateTime`, currently `gemini-3.5-flash-lite`). If Google retires that model before this library updates, set `models: { dateTime: '<current id>' }` in `initializeKnowledgeCommon` — no release needed. Model IDs are checked against `models.json` in tests and against the live API by `npm run check:models` (needs `GEMINI_API_KEY`).
+
 ---
 
 ## Tool overrides
@@ -175,6 +177,7 @@ Must be called once at app startup before any tools are used.
 | `toolOverrides` | `KnowledgeToolOverrides` | No | Replace direct API calls with your own server-side proxies (Maps, Weather, Wikipedia cache write) |
 | `cacheWikipediaArticle` | `(articleId, title) => Promise<{ chunkCount }>` | No | Server-side Wikipedia cache filler — required when Firestore rules deny client writes to `wikipedia_cache` (recommended posture) |
 | `debug` | `boolean` | No | Enables verbose logs that may include user query text. Off by default. |
+| `models` | `{ dateTime?: string; embedding?: string }` | No | Override the Gemini model IDs the library calls (defaults: `DEFAULT_MODELS` — `gemini-3.5-flash-lite` for date/time, `gemini-embedding-001` for Wikipedia embeddings). Resolved at call time, so you can move off a retired model without a new release. Changing `embedding` changes the vector space — clear `wikipedia_cache` when you do. |
 
 ### `allKnowledgeTools`
 
@@ -186,7 +189,7 @@ A `FunctionDeclaration[]` containing all five tool categories, ready to spread i
 
 ```json
 {
-  "@google/genai": "^1.0.0",
+  "@google/genai": "^1.0.0 || ^2.0.0",
   "firebase": "^12.0.0"
 }
 ```
@@ -197,40 +200,47 @@ The consuming app is responsible for Firebase initialization. Pass the initializ
 
 ## Version history
 
-### v1.2.1
+See [CHANGELOG.md](CHANGELOG.md).
 
-- Widened the `@google/genai` peer range to `^1.0.0 || ^2.0.0` — the library only uses type-level exports (`FunctionDeclaration`, `Type`) that are identical across both majors, and consumers (e.g. VoiceCommon) are on v2
+---
 
-### v1.2.0
+## Releasing
 
-- **Removed** the dead `mapsApiKey` config field — nothing in the library read it since the direct-browser Maps/Weather paths were removed; Maps and Weather are override-only (`toolOverrides`)
-- Fetched third-party text (Wikipedia passages, jokes) is now returned to the model inside a clearly labeled untrusted-data block
-- Wikipedia timing/progress logs are now gated behind the `debug` config flag
-- `offset_seconds` returned by the date-offset LLM call is validated (finite number) before use
-- Dependency cleanup: `@google/genai` and `firebase` are peer dependencies only (bounded `^` ranges), no longer duplicated in `dependencies`
-- Added the Apache 2.0 `LICENSE` file; CI/publish workflows pin actions by commit SHA and align on Node 22
+Releases are published to npmjs.org by `.github/workflows/publish.yml` using
+[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) —
+no npm token is stored in the repo or in GitHub secrets, and every publish
+carries provenance.
 
-### v1.1.0
+**One-time setup on npmjs.com (package owner only):**
 
-- Wikipedia candidate selection now ranks articles by embedding cosine similarity — replaces the slow LLM relevance filter with a single batched embedding call
+1. Sign in to <https://www.npmjs.com/> and open
+   <https://www.npmjs.com/package/@andyfooblah/knowledge-common/access>
+   (Package → *Settings* → *Trusted Publishing*).
+2. Under *Trusted Publisher*, choose **GitHub Actions** and enter:
+   - Organization or user: `AndyFooBlah`
+   - Repository: `KnowledgeCommon`
+   - Workflow filename: `publish.yml`
+   - Environment name: *(leave blank)*
+3. Save. From then on any run of `publish.yml` from this repo can publish;
+   nothing else can (no token exists to leak).
 
-### v1.0.1
+If the very first tagged run failed with `ENEEDAUTH`/`E404` before this was
+configured, re-run it from the Actions tab after step 3 (or re-push the tag).
 
-- Wikipedia relevance filter: tolerate trailing junk after the JSON array in the LLM response
+**Cutting a release:**
 
-### v1.0.0
+```bash
+# 1. bump "version" in package.json, add a CHANGELOG.md entry, commit + push
+# 2. tag and push the tag — the workflow tests, builds and publishes
+git tag -a v1.3.1 -m "v1.3.1"
+git push origin v1.3.1
+# 3. confirm
+npm view @andyfooblah/knowledge-common version
+```
 
-- **Breaking:** `geminiApiKey` removed from `KnowledgeCommonConfig`. All Gemini calls go through the required `gemini` broker (`{ invokeGemini, embedContent }`) supplied by the consumer — the library never holds a Gemini API key
-- Direct-browser Google Maps/Weather calls removed; Maps and Weather require `toolOverrides` server-side proxies
-- Added `cacheWikipediaArticle` server-side cache-filler hook and client-side rate limits for Wikipedia and Jokes
-
-### v0.3.0
-
-- Initial release
-- Five tool categories: Weather, Maps (searchPlace + getDistanceBetweenPlaces), Jokes, Wikipedia RAG, DateTime
-- `toolOverrides` support for server-side proxying
-- Firestore-backed Wikipedia embedding cache
-- `allKnowledgeTools` convenience export
+Creating a GitHub Release for the tag also triggers the workflow
+(`release: published`); it is idempotent-safe because npm rejects a duplicate
+version.
 
 ---
 

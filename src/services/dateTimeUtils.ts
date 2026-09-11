@@ -24,7 +24,8 @@
  *
  * Architecture:
  *   1. Normalize each expression to a structured estimate via Gemini
- *      (gemini-3.1-flash-lite-preview — fast, cheap, structured output).
+ *      (`DATETIME_MODEL` by default — a Flash-Lite model: fast, cheap,
+ *      structured output; overridable via `models.dateTime` in the config).
  *   2. Do arithmetic on the normalized ISO strings in TypeScript.
  *   3. Qualify the human-readable output with the inferred confidence level.
  *
@@ -39,14 +40,19 @@
  *   decade | year | month | day | hour | minute | second
  */
 
-import { getKnowledgeConfig } from './config';
+import { getKnowledgeConfig, getModel, DEFAULT_MODELS } from './config';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Fast, cheap model used only for structured date normalization. */
-export const DATETIME_MODEL = 'gemini-3.1-flash-lite-preview';
+/**
+ * Default model used for structured date normalization (fast, cheap,
+ * structured output). Kept as an export for compatibility; the model actually
+ * used is resolved at call time via `initializeKnowledgeCommon({ models: { dateTime } })`
+ * so consumers can move off a retired model without a library release.
+ */
+export const DATETIME_MODEL = DEFAULT_MODELS.dateTime;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,7 +160,7 @@ export async function normalizeDate(
 ): Promise<NormalizedDate> {
   const { gemini } = getKnowledgeConfig();
   const response = await gemini.invokeGemini({
-    model: DATETIME_MODEL,
+    model: getModel('dateTime'),
     contents: `Current date/time: ${currentDateTime}\nExpression: "${expression}"`,
     config: {
       systemInstruction: NORMALIZE_SYSTEM,
@@ -505,7 +511,7 @@ export async function computeTimeOffset(
   // Resolve the offset into a signed number of seconds via the broker
   const { gemini } = getKnowledgeConfig();
   const offsetResponse = await gemini.invokeGemini({
-    model: DATETIME_MODEL,
+    model: getModel('dateTime'),
     contents: `Base date: "${date}" (interpreted as: ${normBase.description})\nOffset expression: "${offset}"`,
     config: {
       systemInstruction: `You are a date/time offset parser. Given a base date and an offset expression, return ONLY a JSON object — no markdown, no explanation.

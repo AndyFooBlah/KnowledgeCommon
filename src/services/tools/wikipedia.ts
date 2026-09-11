@@ -52,7 +52,7 @@ import {
   Timestamp,
   type Firestore,
 } from 'firebase/firestore';
-import { getKnowledgeConfig } from '../config';
+import { getKnowledgeConfig, getModel } from '../config';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -62,7 +62,6 @@ const CHUNK_CHARS = 2048;          // ≈ 512 tokens (4 chars/token estimate)
 const OVERLAP_CHARS = 400;         // ≈ 100 tokens overlap
 const SEARCH_CANDIDATES = 5;       // articles fetched from OpenSearch
 const MAX_CONFIRMED_ARTICLES = 3;  // articles passed to the full RAG pipeline
-const EMBED_MODEL = 'gemini-embedding-001';
 
 // Client-side rate limit mirroring jokes.ts. Each search costs a Gemini
 // embedding call plus up to 3 article fetch+embed pipelines, so a runaway
@@ -571,7 +570,7 @@ async function embedTexts(texts: string[]): Promise<number[][]> {
   const timeoutMs = 10000 + texts.length * 2000;
   const response = await Promise.race([
     gemini.embedContent({
-      model: EMBED_MODEL,
+      model: getModel('embedding'),
       contents: texts,
     }),
     new Promise<never>((_, reject) =>

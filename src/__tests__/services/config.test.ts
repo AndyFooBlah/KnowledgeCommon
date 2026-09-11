@@ -16,6 +16,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   initializeKnowledgeCommon,
   getKnowledgeConfig,
+  getModel,
+  DEFAULT_MODELS,
   _resetKnowledgeConfigForTesting,
 } from '../../services/config';
 
@@ -44,5 +46,38 @@ describe('KnowledgeCommon config singleton', () => {
     initializeKnowledgeCommon({ gemini: broker });
     const freshModule = await import('../../services/config?t=' + Date.now());
     expect(freshModule.getKnowledgeConfig().gemini).toBe(broker);
+  });
+});
+
+describe('model ID resolution (models override)', () => {
+  const broker = { invokeGemini: vi.fn(), embedContent: vi.fn() };
+
+  beforeEach(() => {
+    _resetKnowledgeConfigForTesting();
+  });
+
+  it('falls back to DEFAULT_MODELS when no override is configured', () => {
+    initializeKnowledgeCommon({ gemini: broker });
+    expect(getModel('dateTime')).toBe(DEFAULT_MODELS.dateTime);
+    expect(getModel('embedding')).toBe(DEFAULT_MODELS.embedding);
+  });
+
+  it('returns the consumer override for the overridden kind only', () => {
+    initializeKnowledgeCommon({ gemini: broker, models: { dateTime: 'gemini-9.9-flash-lite' } });
+    expect(getModel('dateTime')).toBe('gemini-9.9-flash-lite');
+    expect(getModel('embedding')).toBe(DEFAULT_MODELS.embedding);
+  });
+
+  it('treats an empty-string override as unset', () => {
+    initializeKnowledgeCommon({ gemini: broker, models: { dateTime: '' } });
+    expect(getModel('dateTime')).toBe(DEFAULT_MODELS.dateTime);
+  });
+
+  it('never defaults to a retired model ID', () => {
+    // gemini-3.1-flash-lite-preview was shut down 2026-05-25 (issue #13).
+    for (const id of Object.values(DEFAULT_MODELS)) {
+      expect(id).not.toMatch(/-preview$/);
+      expect(id).not.toBe('gemini-3.1-flash-lite-preview');
+    }
   });
 });

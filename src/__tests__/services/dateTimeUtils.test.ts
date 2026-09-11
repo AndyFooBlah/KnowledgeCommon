@@ -22,6 +22,7 @@ import {
   computeTimeDifference,
   computeTimeOffset,
   normalizeDate,
+  DATETIME_MODEL,
   type NormalizedDate,
   type DateTimePoint,
 } from '../../services/dateTimeUtils';
@@ -32,7 +33,7 @@ import {
 // it via this shared mock — no `GoogleGenAI` SDK in this module any more.
 // ---------------------------------------------------------------------------
 
-import { initializeKnowledgeCommon } from '../../services/config';
+import { initializeKnowledgeCommon, DEFAULT_MODELS } from '../../services/config';
 
 const mockInvokeGemini = vi.fn();
 const mockEmbedContent = vi.fn();
@@ -695,5 +696,52 @@ describe('computeTimeOffset', () => {
     // 10pm + 3h = 1am Nov 10
     expect(result).toMatch(/1:00 AM/);
     expect(result).toMatch(/November 10/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Model selection (issue #13: the previous hardcoded model was shut down)
+// ---------------------------------------------------------------------------
+
+describe('model selection', () => {
+  const sample: NormalizedDate = {
+    best_estimate: '1997-07',
+    confidence: 'approximate',
+    resolution: 'month',
+    description: 'summer 1997',
+  };
+
+  const baseBroker = {
+    invokeGemini: (req: unknown) => mockInvokeGemini(req),
+    embedContent: (req: unknown) => mockEmbedContent(req),
+  };
+
+  beforeEach(() => {
+    mockInvokeGemini.mockReset();
+    // Restore the default (override-free) config used by the rest of this file.
+    initializeKnowledgeCommon({ gemini: baseBroker });
+  });
+
+  it('DATETIME_MODEL is the library default and is used when no override is set', async () => {
+    expect(DATETIME_MODEL).toBe(DEFAULT_MODELS.dateTime);
+    mockGenerateContent(sample);
+    await normalizeDate('summer 1997', NOW);
+    expect(mockInvokeGemini).toHaveBeenCalledTimes(1);
+    expect(mockInvokeGemini.mock.calls[0][0].model).toBe(DATETIME_MODEL);
+  });
+
+  it('uses models.dateTime from the config at call time (no re-import needed)', async () => {
+    initializeKnowledgeCommon({ gemini: baseBroker, models: { dateTime: 'gemini-test-override' } });
+    mockGenerateContent(sample);
+    await normalizeDate('summer 1997', NOW);
+    expect(mockInvokeGemini.mock.calls[0][0].model).toBe('gemini-test-override');
+
+    // computeTimeOffset makes two broker calls (normalize + offset); both honour the override.
+    mockInvokeGemini
+      .mockResolvedValueOnce({ text: JSON.stringify(sample) })
+      .mockResolvedValueOnce({ text: JSON.stringify({ offset_seconds: 3600, description: '1 hour later' }) });
+    await computeTimeOffset('summer 1997', '1 hour later', NOW);
+    const models = mockInvokeGemini.mock.calls.map((c) => c[0].model);
+    expect(models).toEqual(['gemini-test-override', 'gemini-test-override', 'gemini-test-override']);
   });
 });

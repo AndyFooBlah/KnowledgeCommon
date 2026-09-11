@@ -56,15 +56,23 @@ npm run build:lib          # build the ESM library bundle into dist/
 
 ## Publishing
 
-Publish is triggered by pushing a `v*` tag (e.g. `v0.2.0`). The CI workflow
-runs tests, builds the library, and publishes to npmjs.org automatically
-(requires the `NPM_TOKEN` repo secret — an npm automation token).
+Publish is triggered by pushing a `v*` tag (or publishing a GitHub Release).
+`publish.yml` runs type-check + tests, builds the library, and publishes to
+npmjs.org via **npm Trusted Publishing (OIDC)** — there is no `NPM_TOKEN`
+secret and there must never be one. The package owner configures the Trusted
+Publisher once on npmjs.com (see README → "Releasing"). The workflow also
+fails if the tag does not match `package.json`'s version.
 
 ```bash
-# bump version in package.json first, then:
-git tag v0.2.0
-git push origin v0.2.0
+# bump version in package.json + add a CHANGELOG.md entry, commit, push, then:
+git tag -a v1.3.1 -m "v1.3.1"
+git push origin v1.3.1
 ```
+
+Default Gemini model IDs live in `DEFAULT_MODELS` (`src/services/config.ts`)
+and are mirrored in `models.json`; update both together after checking
+https://ai.google.dev/gemini-api/docs/models. `npm run check:models` verifies
+the list against the live API when `GEMINI_API_KEY` is set.
 
 ## Architecture notes
 
@@ -112,7 +120,8 @@ whichever Firestore database the application provides.
 ### Adding new tools
 
 1. Create `src/services/tools/myTool.ts` — export a `FunctionDeclaration` and
-   an async implementation function; use `getKnowledgeConfig()` for API keys
+   an async implementation function; reach Gemini only via `getKnowledgeConfig().gemini`
+   and pick model IDs via `getModel(...)` (never hardcode a model string in a tool)
 2. Export from `src/lib.ts`
 3. Add to `allKnowledgeTools` in `src/lib.ts`
 4. Add tests in `src/__tests__/services/tools/myTool.test.ts`

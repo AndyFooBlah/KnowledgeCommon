@@ -31,3 +31,12 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      # Verifies models.json against the live Gemini model list. Runs only when
+      # the optional GEMINI_API_KEY repo secret exists; the unit tests already
+      # assert the code's defaults are in the allow-list either way.
+      - name: Verify model IDs against the Gemini API
+        if: ${{ env.GEMINI_API_KEY != '' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node scripts/check-models.mjs

@@ -1,7 +1,19 @@
 {
   "name": "@andyfooblah/knowledge-common",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "General-purpose knowledge and utility tools for AI agents powered by Google Gemini.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AndyFooBlah/KnowledgeCommon.git"
+  },
+  "homepage": "https://github.com/AndyFooBlah/KnowledgeCommon#readme",
+  "bugs": {
+    "url": "https://github.com/AndyFooBlah/KnowledgeCommon/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -25,7 +37,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "check:models": "node scripts/check-models.mjs"
   },
   "peerDependencies": {
     "@google/genai": "^1.0.0 || ^2.0.0",

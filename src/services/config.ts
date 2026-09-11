@@ -161,6 +161,49 @@ export interface KnowledgeCommonConfig {
     articleId: string,
     title: string,
   ) => Promise<{ chunkCount: number }>;
+  /**
+   * Optional Gemini model-ID overrides. Every field defaults to the constant
+   * in `DEFAULT_MODELS` (see also `DATETIME_MODEL` / `EMBEDDING_MODEL`).
+   * Set these to move to a newer model — or away from a shut-down one —
+   * without waiting for a KnowledgeCommon release. Model IDs are resolved at
+   * call time, so an override applies to every subsequent tool call.
+   *
+   * Note: `embedding` changes the vector space of the Wikipedia cache;
+   * embeddings from different models are not comparable, so change it only
+   * together with clearing (or versioning) `wikipedia_cache`.
+   */
+  models?: KnowledgeModelOverrides;
+}
+
+/** Gemini model IDs KnowledgeCommon calls through the broker. */
+export interface KnowledgeModelOverrides {
+  /** Model for natural-language date/time normalization (fast, cheap, structured output). */
+  dateTime?: string;
+  /** Embedding model for Wikipedia RAG candidate ranking and chunk scoring. */
+  embedding?: string;
+}
+
+/**
+ * Default model IDs. Verified against https://ai.google.dev/gemini-api/docs/models
+ * on 2026-09-10; `models.json` at the repo root is the allow-list that
+ * `scripts/check-models.mjs` re-verifies against the live API.
+ */
+export const DEFAULT_MODELS: Readonly<Required<KnowledgeModelOverrides>> = Object.freeze({
+  dateTime: 'gemini-3.5-flash-lite',
+  embedding: 'gemini-embedding-001',
+});
+
+/**
+ * Resolve a model ID at call time: the consumer's `models` override if set,
+ * otherwise the library default. Does not require initialization to have
+ * happened for the default to be returned — but every caller in this library
+ * needs the broker anyway, so in practice `getKnowledgeConfig()` has run.
+ */
+export function getModel(kind: keyof KnowledgeModelOverrides): string {
+  const config = (globalThis as Record<symbol, unknown>)[GLOBAL_CONFIG_KEY] as
+    | KnowledgeCommonConfig
+    | undefined;
+  return config?.models?.[kind] || DEFAULT_MODELS[kind];
 }
 
 /**

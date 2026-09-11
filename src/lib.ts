@@ -25,8 +25,13 @@
 // (e.g. a plain mapsApiKey string); exposing it publicly would let any code
 // with the package imported read those values. Internal modules import it
 // directly from './services/config'.
-export { initializeKnowledgeCommon } from './services/config';
-export type { KnowledgeCommonConfig, KnowledgeToolOverrides } from './services/config';
+export { initializeKnowledgeCommon, DEFAULT_MODELS } from './services/config';
+export type {
+  KnowledgeCommonConfig,
+  KnowledgeToolOverrides,
+  KnowledgeGeminiBroker,
+  KnowledgeModelOverrides,
+} from './services/config';
 
 // Tools
 export { weatherTool, getWeather } from './services/tools/weather';
